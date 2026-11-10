@@ -47,6 +47,16 @@ class KajiApp extends StatelessWidget {
         brightness: Brightness.dark,
         useMaterial3: true,
       ),
+      // PC のブラウザで開いたときもスマホくらいの幅で表示する。
+      builder: (context, child) => ColoredBox(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: child,
+          ),
+        ),
+      ),
       home: HomeShell(store: store),
     );
   }

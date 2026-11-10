@@ -20,6 +20,14 @@
 | --- | --- | --- | --- |
 | ![](docs/screenshots/1_home.png) | ![](docs/screenshots/2_chores.png) | ![](docs/screenshots/3_edit.png) | ![](docs/screenshots/4_report.png) |
 
+## ブラウザで試す
+
+https://yosihirox.github.io/kaji_kiroku/
+
+PC でもスマホでも開けます。`main` にマージされるたびに、GitHub Actions がテストしてから自動で公開し直します。ブラウザ版のデータはそのブラウザの中だけに保存されます。
+
+初回だけ、リポジトリの **Settings → Pages → Build and deployment → Source** を「GitHub Actions」にしてください。
+
 ## 手元で動かす
 
 1. [Flutter をインストール](https://docs.flutter.dev/get-started/install)（最新の安定版）
