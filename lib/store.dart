@@ -151,7 +151,7 @@ class AppStore extends ChangeNotifier {
 
   String newId() {
     final t = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
-    final r = _random.nextInt(1 << 32).toRadixString(36);
+    final r = _random.nextInt(0x7fffffff).toRadixString(36);
     return '$t$r';
   }
 
