@@ -1,94 +1,244 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kaji_kiroku/recurrence.dart';
+import 'package:kaji_kiroku/domain/dates.dart';
+import 'package:kaji_kiroku/domain/recurrence.dart';
 
 void main() {
-  DateTime d(int y, int m, int day) => DateTime(y, m, day);
+  List<String> keys(Iterable<DateTime> dates) => dates.map(dateKey).toList();
 
-  test('毎月 第2・第4 月曜日', () {
-    const r = Repeat(
-      type: RepeatType.monthlyNthWeekday,
-      nths: {2, 4},
-      weekday: DateTime.monday,
-    );
-    final dates = r.occurrencesBetween(d(2026, 11, 1), d(2026, 12, 31), d(2026, 11, 1));
-    expect(dates, [d(2026, 11, 9), d(2026, 11, 23), d(2026, 12, 14), d(2026, 12, 28)]);
+  group('予定日の計算', () {
+    test('1回だけ', () {
+      const r = Repeat.none();
+      final start = DateTime(2026, 11, 12);
+      expect(r.occursOn(DateTime(2026, 11, 12), start), isTrue);
+      expect(r.occursOn(DateTime(2026, 11, 13), start), isFalse);
+      expect(r.isRepeating, isFalse);
+    });
+
+    test('3日ごと', () {
+      const r = Repeat.daily(3);
+      final start = DateTime(2026, 11, 1);
+      expect(
+        keys(
+          r.occurrencesBetween(
+            DateTime(2026, 11, 1),
+            DateTime(2026, 11, 10),
+            start,
+          ),
+        ),
+        ['2026-11-01', '2026-11-04', '2026-11-07', '2026-11-10'],
+      );
+    });
+
+    test('毎週 火・金', () {
+      const r = Repeat.weekly({2, 5});
+      final start = DateTime(2026, 11, 2); // 月
+      expect(
+        keys(
+          r.occurrencesBetween(
+            DateTime(2026, 11, 2),
+            DateTime(2026, 11, 15),
+            start,
+          ),
+        ),
+        ['2026-11-03', '2026-11-06', '2026-11-10', '2026-11-13'],
+      );
+    });
+
+    test('2週ごとの土曜は、開始日の週を1週目として数える', () {
+      const r = Repeat.weekly({6}, interval: 2);
+      final start = DateTime(2026, 11, 4); // 水
+      expect(
+        keys(
+          r.occurrencesBetween(
+            DateTime(2026, 11, 1),
+            DateTime(2026, 12, 6),
+            start,
+          ),
+        ),
+        ['2026-11-07', '2026-11-21', '2026-12-05'],
+      );
+    });
+
+    test('毎月31日は、31日がない月は月末に寄せる', () {
+      const r = Repeat.monthlyDay(31);
+      final start = DateTime(2026, 1, 1);
+      expect(r.occursOn(DateTime(2026, 2, 28), start), isTrue);
+      expect(r.occursOn(DateTime(2026, 4, 30), start), isTrue);
+      expect(r.occursOn(DateTime(2026, 3, 30), start), isFalse);
+      expect(r.occursOn(DateTime(2026, 3, 31), start), isTrue);
+    });
+
+    test('月末', () {
+      const r = Repeat.monthlyDay(0);
+      final start = DateTime(2028, 1, 1);
+      expect(r.occursOn(DateTime(2028, 2, 29), start), isTrue); // うるう年
+      expect(r.occursOn(DateTime(2028, 2, 28), start), isFalse);
+    });
+
+    test('3か月ごと', () {
+      const r = Repeat.monthlyDay(1, interval: 3);
+      final start = DateTime(2026, 11, 1);
+      expect(
+        keys(
+          r.occurrencesBetween(
+            DateTime(2026, 11, 1),
+            DateTime(2027, 6, 1),
+            start,
+          ),
+        ),
+        ['2026-11-01', '2027-02-01', '2027-05-01'],
+      );
+    });
+
+    test('第2・第4月曜', () {
+      const r = Repeat.monthlyNth({2, 4}, DateTime.monday);
+      final start = DateTime(2026, 11, 1);
+      expect(
+        keys(
+          r.occurrencesBetween(
+            DateTime(2026, 11, 1),
+            DateTime(2026, 12, 31),
+            start,
+          ),
+        ),
+        ['2026-11-09', '2026-11-23', '2026-12-14', '2026-12-28'],
+      );
+    });
+
+    test('最終金曜は、月によって第4にも第5にもなる', () {
+      const r = Repeat.monthlyNth({Repeat.lastWeek}, DateTime.friday);
+      final start = DateTime(2026, 10, 1);
+      expect(
+        keys(
+          r.occurrencesBetween(
+            DateTime(2026, 10, 1),
+            DateTime(2026, 11, 30),
+            start,
+          ),
+        ),
+        ['2026-10-30', '2026-11-27'],
+      );
+    });
+
+    test('毎年。2/29 始まりは平年だと 2/28', () {
+      const r = Repeat.yearly();
+      final start = DateTime(2028, 2, 29);
+      expect(r.occursOn(DateTime(2029, 2, 28), start), isTrue);
+      expect(r.occursOn(DateTime(2032, 2, 29), start), isTrue);
+      expect(r.occursOn(DateTime(2032, 2, 28), start), isFalse);
+    });
+
+    test('やった日から14日後', () {
+      const r = Repeat.afterDone(14);
+      final start = DateTime(2026, 11, 1);
+      expect(r.nextAfterDone(start, null), start);
+      expect(
+        r.nextAfterDone(start, DateTime(2026, 11, 5)),
+        DateTime(2026, 11, 19),
+      );
+      expect(
+        keys(
+          r.occurrencesBetween(
+            DateTime(2026, 11, 1),
+            DateTime(2026, 11, 30),
+            start,
+            lastDone: DateTime(2026, 11, 5),
+          ),
+        ),
+        ['2026-11-19'],
+      );
+    });
+
+    test('開始日より前は予定にならない', () {
+      const r = Repeat.daily();
+      expect(
+        r.occursOn(DateTime(2026, 10, 31), DateTime(2026, 11, 1)),
+        isFalse,
+      );
+    });
+
+    test('曜日を選んでいない毎週は、予定を作らない', () {
+      const r = Repeat.weekly({});
+      expect(r.isValid, isFalse);
+      expect(
+        r.occurrencesBetween(
+          DateTime(2026, 11, 1),
+          DateTime(2026, 11, 30),
+          DateTime(2026, 11, 1),
+        ),
+        isEmpty,
+      );
+    });
   });
 
-  test('毎月 最終金曜日', () {
-    const r = Repeat(
-      type: RepeatType.monthlyNthWeekday,
-      nths: {5},
-      weekday: DateTime.friday,
-    );
-    final dates = r.occurrencesBetween(d(2026, 11, 1), d(2027, 1, 31), d(2026, 11, 1));
-    expect(dates, [d(2026, 11, 27), d(2026, 12, 25), d(2027, 1, 29)]);
+  group('前後の予定日を探す', () {
+    test('次の予定日', () {
+      const r = Repeat.monthlyNth({2, 4}, DateTime.monday);
+      final start = DateTime(2026, 11, 1);
+      expect(
+        r.nextOnOrAfter(DateTime(2026, 11, 10), start),
+        DateTime(2026, 11, 23),
+      );
+      expect(
+        r.nextOnOrAfter(DateTime(2026, 11, 23), start),
+        DateTime(2026, 11, 23),
+      );
+    });
+
+    test('毎年の次の予定日は1年先でも見つかる', () {
+      const r = Repeat.yearly();
+      final start = DateTime(2026, 12, 28);
+      expect(
+        r.nextOnOrAfter(DateTime(2026, 12, 29), start),
+        DateTime(2027, 12, 28),
+      );
+    });
+
+    test('直前の予定日', () {
+      const r = Repeat.weekly({1});
+      final start = DateTime(2026, 11, 2);
+      expect(
+        r.previousBefore(DateTime(2026, 11, 11), start),
+        DateTime(2026, 11, 9),
+      );
+      expect(r.previousBefore(DateTime(2026, 11, 2), start), isNull);
+    });
+
+    test('1回だけの家事の直前の予定日は開始日', () {
+      const r = Repeat.none();
+      final start = DateTime(2026, 11, 5);
+      expect(r.previousBefore(DateTime(2026, 11, 11), start), start);
+      expect(r.previousBefore(DateTime(2026, 11, 5), start), isNull);
+    });
   });
 
-  test('毎月31日は短い月では月末になる', () {
-    const r = Repeat(type: RepeatType.monthlyDay, monthDay: 31);
-    final dates = r.occurrencesBetween(d(2027, 1, 1), d(2027, 4, 30), d(2027, 1, 1));
-    expect(dates, [d(2027, 1, 31), d(2027, 2, 28), d(2027, 3, 31), d(2027, 4, 30)]);
+  group('説明文', () {
+    final start = DateTime(2026, 11, 11);
+    test('よく使う形', () {
+      expect(const Repeat.daily().describe(start), '毎日');
+      expect(const Repeat.daily(3).describe(start), '3日ごと');
+      expect(const Repeat.weekly({2, 5}).describe(start), '毎週 火・金');
+      expect(const Repeat.weekly(Repeat.weekdaysOnly).describe(start), '毎週 平日');
+      expect(const Repeat.weekly({6}, interval: 2).describe(start), '2週ごと 土');
+      expect(const Repeat.monthlyDay(0).describe(start), '毎月 月末');
+      expect(const Repeat.monthlyNth({2, 4}, 1).describe(start), '毎月 第2・第4 月曜');
+      expect(const Repeat.yearly().describe(start), '毎年 11月11日');
+      expect(const Repeat.afterDone(14).describe(start), 'やった日から14日後');
+    });
   });
 
-  test('3か月ごとの25日', () {
-    const r = Repeat(type: RepeatType.monthlyDay, monthDay: 25, interval: 3);
-    final dates = r.occurrencesBetween(d(2026, 11, 1), d(2027, 6, 30), d(2026, 11, 10));
-    expect(dates, [d(2026, 11, 25), d(2027, 2, 25), d(2027, 5, 25)]);
-  });
-
-  test('2週ごと 火・金', () {
-    const r = Repeat(
-      type: RepeatType.weekly,
-      interval: 2,
-      weekdays: {DateTime.tuesday, DateTime.friday},
-    );
-    // 2026-11-10 は火曜日
-    final dates = r.occurrencesBetween(d(2026, 11, 10), d(2026, 11, 30), d(2026, 11, 10));
-    expect(dates, [d(2026, 11, 10), d(2026, 11, 13), d(2026, 11, 24), d(2026, 11, 27)]);
-  });
-
-  test('3日ごと', () {
-    const r = Repeat(type: RepeatType.daily, interval: 3);
-    final dates = r.occurrencesBetween(d(2026, 11, 12), d(2026, 11, 20), d(2026, 11, 10));
-    expect(dates, [d(2026, 11, 13), d(2026, 11, 16), d(2026, 11, 19)]);
-  });
-
-  test('毎年（うるう日は平年 2/28）', () {
-    const r = Repeat(type: RepeatType.yearly);
-    final dates = r.occurrencesBetween(d(2028, 1, 1), d(2029, 12, 31), d(2028, 2, 29));
-    expect(dates, [d(2028, 2, 29), d(2029, 2, 28)]);
-  });
-
-  test('やった日から30日後', () {
-    const r = Repeat(type: RepeatType.afterDone, interval: 30);
-    expect(r.nextAfterDone(d(2026, 11, 1), null), d(2026, 11, 1));
-    expect(r.nextAfterDone(d(2026, 11, 1), d(2026, 11, 5)), d(2026, 12, 5));
-  });
-
-  test('説明文', () {
-    const r = Repeat(
-      type: RepeatType.monthlyNthWeekday,
-      nths: {2, 4},
-      weekday: DateTime.monday,
-    );
-    expect(r.describe(d(2026, 11, 1)), '毎月 第2・第4 月曜日');
-    expect(
-      const Repeat(type: RepeatType.weekly, weekdays: {2, 5}).describe(d(2026, 11, 1)),
-      '毎週 火・金曜日',
-    );
-  });
-
-  test('JSON で保存して戻せる', () {
-    const r = Repeat(
-      type: RepeatType.monthlyNthWeekday,
-      interval: 2,
-      nths: {1, 5},
-      weekday: DateTime.sunday,
-    );
-    final back = Repeat.fromJson(r.toJson());
-    expect(back.type, r.type);
-    expect(back.interval, 2);
-    expect(back.nths, {1, 5});
-    expect(back.weekday, DateTime.sunday);
+  test('保存して読み戻しても同じルールになる', () {
+    const rules = [
+      Repeat.none(),
+      Repeat.daily(2),
+      Repeat.weekly({1, 3, 5}, interval: 2),
+      Repeat.monthlyDay(0, interval: 3),
+      Repeat.monthlyNth({2, Repeat.lastWeek}, DateTime.sunday),
+      Repeat.yearly(),
+      Repeat.afterDone(30),
+    ];
+    for (final r in rules) {
+      expect(Repeat.fromJson(r.toJson()), r);
+    }
   });
 }

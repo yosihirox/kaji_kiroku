@@ -1,7 +1,7 @@
 name: kaji_kiroku
-description: "家族で共有する家事アプリ（試作版）"
+description: "家族で「やること」と「やったこと」を共有する家事アプリ（試作版）"
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ^3.9.0
@@ -20,3 +20,14 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/fonts/OFL.txt
+    - assets/images/app_icon.png
+  fonts:
+    # Zen Maru Gothic（SIL Open Font License）。tool/subset_font.py でよく使う文字に絞ったもの。
+    - family: ZenMaruGothic
+      fonts:
+        - asset: assets/fonts/ZenMaruGothic-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/ZenMaruGothic-Bold.ttf
+          weight: 700
