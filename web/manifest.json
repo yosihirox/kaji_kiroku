@@ -3,9 +3,9 @@
     "short_name": "家事きろく",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#FFFFFF",
-    "theme_color": "#4E79A7",
-    "description": "家族で共有する家事アプリ（試作版）",
+    "background_color": "#F8F4EC",
+    "theme_color": "#1F7A6E",
+    "description": "家族の「やること」と「やったこと」を、みんなで見える化する家事アプリ（試作版）",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
@@ -31,5 +31,6 @@
             "type": "image/png",
             "purpose": "maskable"
         }
-    ]
+    ],
+    "lang": "ja"
 }
