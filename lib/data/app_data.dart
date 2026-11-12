@@ -19,17 +19,20 @@ class AppData {
     List<Thanks>? thanks,
     List<ShoppingList>? lists,
     List<ShoppingItem>? items,
+    List<FamilyMessage>? messages,
     this.notifications = const NotificationSettings(),
     this.appearance = Appearance.system,
     this.currentMemberId,
     this.onboarded = false,
+    this.showShoppingSuggestions = true,
   }) : members = members ?? [],
        genres = genres ?? defaultGenres(),
        chores = chores ?? [],
        records = records ?? [],
        thanks = thanks ?? [],
        lists = lists ?? [],
-       items = items ?? [];
+       items = items ?? [],
+       messages = messages ?? [];
 
   List<Member> members;
   List<Genre> genres;
@@ -38,6 +41,7 @@ class AppData {
   List<Thanks> thanks;
   List<ShoppingList> lists;
   List<ShoppingItem> items;
+  List<FamilyMessage> messages;
   NotificationSettings notifications;
   Appearance appearance;
 
@@ -46,6 +50,9 @@ class AppData {
 
   /// はじめての設定が済んでいるか。
   bool onboarded;
+
+  /// 買い物画面に「よく買うものから追加」を出すか。
+  bool showShoppingSuggestions;
 
   Map<String, dynamic> toJson() => {
     'version': currentDataVersion,
@@ -56,10 +63,12 @@ class AppData {
     'thanks': [for (final t in thanks) t.toJson()],
     'lists': [for (final l in lists) l.toJson()],
     'items': [for (final i in items) i.toJson()],
+    'messages': [for (final m in messages) m.toJson()],
     'notifications': notifications.toJson(),
     'appearance': appearance.name,
     'currentMember': currentMemberId,
     'onboarded': onboarded,
+    'showShoppingSuggestions': showShoppingSuggestions,
   };
 
   String encode() => jsonEncode(toJson());
@@ -88,6 +97,7 @@ AppData decodeAppData(String raw) {
     thanks: list('thanks', Thanks.fromJson),
     lists: list('lists', ShoppingList.fromJson),
     items: list('items', ShoppingItem.fromJson),
+    messages: list('messages', FamilyMessage.fromJson),
     notifications: j['notifications'] is Map
         ? NotificationSettings.fromJson(
             (j['notifications'] as Map).cast<String, dynamic>(),
@@ -97,6 +107,9 @@ AppData decodeAppData(String raw) {
         Appearance.values.asNameMap()[j['appearance']] ?? Appearance.system,
     currentMemberId: j['currentMember'] as String?,
     onboarded: j['onboarded'] is bool ? j['onboarded'] as bool : false,
+    showShoppingSuggestions: j['showShoppingSuggestions'] is bool
+        ? j['showShoppingSuggestions'] as bool
+        : true,
   );
   if (version < 2) _migrateFromV1(data);
   _repair(data);

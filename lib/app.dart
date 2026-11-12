@@ -6,6 +6,7 @@ import 'state/app_store.dart';
 import 'ui/onboarding/onboarding_screen.dart';
 import 'ui/shell.dart';
 import 'ui/theme.dart';
+import 'ui/widgets/common.dart';
 import 'ui/widgets/store_scope.dart';
 
 /// パソコンの広い画面でも、スマホくらいの幅で表示する。
@@ -22,6 +23,7 @@ class KajiApp extends StatefulWidget {
 class _KajiAppState extends State<KajiApp> {
   late Appearance _appearance = widget.store.appearance;
   late bool _onboarded = widget.store.onboarded;
+  final _noticeObserver = NoticeNavigatorObserver();
 
   @override
   void initState() {
@@ -64,7 +66,9 @@ class _KajiAppState extends State<KajiApp> {
           Appearance.light => ThemeMode.light,
           Appearance.dark => ThemeMode.dark,
         },
-        builder: (context, child) => _PhoneFrame(child: child!),
+        navigatorObservers: [_noticeObserver],
+        builder: (context, child) =>
+            NoticeDismisser(child: _PhoneFrame(child: child!)),
         home: _onboarded
             ? const Shell(key: ValueKey('shell'))
             : const OnboardingScreen(key: ValueKey('onboarding')),

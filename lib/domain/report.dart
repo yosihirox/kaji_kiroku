@@ -191,3 +191,37 @@ Report buildReport({
     daily: daily,
   );
 }
+
+/// 1人分の件数。
+class MemberCount {
+  const MemberCount(this.member, this.count);
+  final Member member;
+  final int count;
+}
+
+/// [from] から [to] の日（両端を含む）にやった家事の件数を、人ごとに多い順で返す。
+/// 0件の人は入れない。同じ件数なら家族の並び順。
+List<MemberCount> doneCountsBetween({
+  required List<Member> members,
+  required Iterable<Record> records,
+  required DateTime from,
+  required DateTime to,
+}) {
+  final period = ReportPeriod(dateOnly(from), dateOnly(to), isWeek: false);
+  final counts = <String, int>{};
+  for (final r in records) {
+    if (!r.isDone || r.doneById == null || !period.contains(r.at)) continue;
+    counts[r.doneById!] = (counts[r.doneById!] ?? 0) + 1;
+  }
+  final result = [
+    for (final m in members)
+      if ((counts[m.id] ?? 0) > 0) MemberCount(m, counts[m.id]!),
+  ];
+  // sort は安定なので、同じ件数なら家族の並び順のまま。
+  final order = {for (var i = 0; i < members.length; i++) members[i].id: i};
+  result.sort((a, b) {
+    final c = b.count.compareTo(a.count);
+    return c != 0 ? c : order[a.member.id]!.compareTo(order[b.member.id]!);
+  });
+  return result;
+}

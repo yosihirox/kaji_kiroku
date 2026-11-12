@@ -371,7 +371,16 @@ Future<T?> showAppSheet<T>(
   );
 }
 
+/// お知らせを出しておく時間。
+const noticeDuration = Duration(seconds: 3);
+
+/// お知らせを出しているかもしれない間は true。
+bool _noticeShowing = false;
+
 /// 画面下に短いお知らせを出す。前のお知らせは引っこめる。
+///
+/// 「取り消す」があっても [noticeDuration] で消える。お知らせ自体をタップしたとき、
+/// 画面のどこかをタップしたとき（[NoticeDismisser]）、タブを切り替えたときにも消える。
 void showNotice(
   BuildContext context,
   String message, {
@@ -380,15 +389,57 @@ void showNotice(
 }) {
   final messenger = ScaffoldMessenger.of(context);
   messenger.hideCurrentSnackBar();
+  _noticeShowing = true;
   messenger.showSnackBar(
     SnackBar(
-      content: Text(message),
-      duration: const Duration(seconds: 4),
+      content: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: messenger.hideCurrentSnackBar,
+        child: Text(message),
+      ),
+      duration: noticeDuration,
+      persist: false,
       action: actionLabel == null
           ? null
           : SnackBarAction(label: actionLabel, onPressed: onAction ?? () {}),
     ),
   );
+}
+
+/// いま出ているお知らせを引っこめる。
+void hideNotice(BuildContext context) {
+  _noticeShowing = false;
+  ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
+}
+
+/// 画面のどこかをタップしたら、お知らせを引っこめる。
+///
+/// 指を離した知らせは、ボタンなどの「タップされた」より先にここへ届く。
+/// そのため、お知らせを出したタップそのもので消えることはなく、
+/// 「取り消す」のタップも、消える動きの途中でちゃんと届く。
+class NoticeDismisser extends StatelessWidget {
+  const NoticeDismisser({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerUp: (_) {
+        if (_noticeShowing) hideNotice(context);
+      },
+      child: child,
+    );
+  }
+}
+
+/// 別の画面やシートを開いたら、お知らせを引っこめる。
+class NoticeNavigatorObserver extends NavigatorObserver {
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    final context = navigator?.context;
+    if (context != null) hideNotice(context);
+  }
 }
 
 /// 家族を1人えらぶ、横並びの顔ぶれ。

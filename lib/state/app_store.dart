@@ -206,6 +206,28 @@ class AppStore extends ChangeNotifier {
     agenda: agenda,
     settings: notifications,
     memberId: currentMemberId,
+    messages: _data.messages,
+    members: _data.members,
+  );
+
+  /// ホームで日付をえらんだときの、その日の家事。
+  AgendaDay dayItems(DateTime date) =>
+      buildDayItems(chores: _data.chores, records: _data.records, date: date);
+
+  /// 今日家事をした人と件数（多い順）。
+  List<MemberCount> get todayDoneCounts => doneCountsBetween(
+    members: _data.members,
+    records: _data.records,
+    from: today,
+    to: today,
+  );
+
+  /// 直近1週間（今日を含む7日）の、人ごとの件数（多い順）。
+  List<MemberCount> get weekDoneCounts => doneCountsBetween(
+    members: _data.members,
+    records: _data.records,
+    from: addDays(today, -(messageDays - 1)),
+    to: today,
   );
 
   // ---- はじめての設定 ----
@@ -597,6 +619,18 @@ class AppStore extends ChangeNotifier {
     _changed();
   }
 
+  /// 品物の数と単位を決める。[quantity] が null なら数を外す。
+  void setShoppingQuantity(String id, int? quantity, {String? unit}) {
+    final i = _data.items.indexWhere((x) => x.id == id);
+    if (i < 0) return;
+    final q = quantity == null || quantity <= 0 ? null : quantity;
+    _data.items[i] = _data.items[i].copyWith(
+      quantity: q,
+      unit: unit ?? _data.items[i].unit,
+    );
+    _changed();
+  }
+
   void removeShoppingItem(String id) {
     _data.items.removeWhere((i) => i.id == id);
     _changed();
@@ -690,7 +724,62 @@ class AppStore extends ChangeNotifier {
     _data.items.removeWhere((i) => drop.contains(i.id));
   }
 
+  // ---- メッセージ ----
+
+  /// メッセージを出しておく日数。
+  static const messageDays = 7;
+
+  /// 古いメッセージを消すまでの日数。
+  static const _messageKeepDays = 60;
+
+  /// 直近1週間のメッセージ（新しい順）。
+  List<FamilyMessage> get recentMessages {
+    final from = addDays(today, -(messageDays - 1));
+    return _data.messages.where((m) => !dateOnly(m.at).isBefore(from)).toList()
+      ..sort((a, b) => b.at.compareTo(a.at));
+  }
+
+  /// この端末を使っている人から [toId] にメッセージを送る。
+  FamilyMessage? sendMessage(String toId, String text) {
+    final from = currentMemberId;
+    final trimmed = text.trim();
+    if (from == null || trimmed.isEmpty || memberById(toId) == null) {
+      return null;
+    }
+    final message = FamilyMessage(
+      id: _newId(),
+      fromId: from,
+      toId: toId,
+      text: trimmed,
+      at: now,
+    );
+    final keepFrom = addDays(today, -_messageKeepDays);
+    _data.messages.removeWhere((m) => m.at.isBefore(keepFrom));
+    _data.messages.add(message);
+    _changed();
+    return message;
+  }
+
+  /// 自分が送ったメッセージを消す。ほかの人のメッセージは消せない。
+  bool deleteMessage(String id) {
+    final before = _data.messages.length;
+    _data.messages.removeWhere(
+      (m) => m.id == id && m.fromId == currentMemberId,
+    );
+    if (_data.messages.length == before) return false;
+    _changed();
+    return true;
+  }
+
   // ---- 設定 ----
+
+  bool get showShoppingSuggestions => _data.showShoppingSuggestions;
+
+  void setShowShoppingSuggestions(bool value) {
+    if (_data.showShoppingSuggestions == value) return;
+    _data.showShoppingSuggestions = value;
+    _changed();
+  }
 
   void updateNotifications(NotificationSettings settings) {
     _data.notifications = settings;

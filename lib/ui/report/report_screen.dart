@@ -6,6 +6,7 @@ import '../../domain/models.dart';
 import '../../domain/report.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../messages/messages.dart';
 import '../widgets/store_scope.dart';
 
 /// がんばり: 誰がどの家事をどれだけやったかを見える化する。
@@ -42,7 +43,7 @@ class _ReportScreenState extends State<ReportScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('がんばり')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 104),
         children: [
           // せまい画面では、期間の切り替えが下の段に折り返す。
           Wrap(
@@ -104,9 +105,14 @@ class _ReportScreenState extends State<ReportScreen> {
                 title: '$periodNameの記録はまだありません',
                 message: 'ホームで家事を完了すると、誰がどんな家事をしたかがここに集まります。',
               ),
-            )
-          else ...[
+            ),
+          if (report.total > 0)
             _SummaryCard(report: report, periodName: periodName),
+          if (store.recentMessages.isNotEmpty) ...[
+            const SectionLabel('この1週間のメッセージ'),
+            const RecentMessages(),
+          ],
+          if (report.total > 0) ...[
             const SizedBox(height: 12),
             for (final m in report.members)
               Padding(
@@ -124,6 +130,12 @@ class _ReportScreenState extends State<ReportScreen> {
             ),
           ],
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'report-message',
+        onPressed: () => showSendMessageSheet(context),
+        icon: const Icon(Icons.mail_rounded),
+        label: const Text('メッセージを送る'),
       ),
     );
   }

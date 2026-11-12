@@ -26,7 +26,8 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter analyze
+      # 新しい Flutter で増える「非推奨」のお知らせ（info）では止めない。警告とエラーでは止まる。
+      - run: flutter analyze --no-fatal-infos
       - run: flutter test
       - run: flutter build web --release --base-href "/${{ github.event.repository.name }}/"
       - uses: actions/upload-pages-artifact@v3

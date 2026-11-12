@@ -168,8 +168,11 @@ Future<AppStore> _seed({Appearance appearance = Appearance.light}) async {
   store.toggleThanks(fridgeRecord.id, 'great');
 
   store.setCurrentMember(kuma);
-  store.addShoppingItem(supermarket, '牛乳', note: '2本');
-  store.addShoppingItem(supermarket, '食パン');
+  final milk = store.addShoppingItem(supermarket, '牛乳', note: '低脂肪のもの')!;
+  store.setShoppingQuantity(milk.id, 2, unit: '本');
+  final bread = store.addShoppingItem(supermarket, '食パン')!;
+  store.setShoppingQuantity(bread.id, 1, unit: '袋');
+  store.sendMessage(nana, '今週はたくさん家事をがんばってくれたんだね。ありがとう！');
   store.setCurrentMember(nana);
   final tofu = store.addShoppingItem(supermarket, '豆腐')!;
   store.addShoppingItem(supermarket, 'バナナ');
@@ -255,19 +258,53 @@ void main() {
     await pumpApp(tester, store);
     await shot(tester, '10_home');
 
-    await tester.tap(find.text('お風呂掃除'));
+    await tester.tap(find.byTooltip('カレンダーで日付をえらぶ'));
+    await shot(tester, '13_home_calendar');
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('メッセージを送る'));
+    await shot(tester, '14_message_sheet');
+    await tester.tapAt(const Offset(195, 40));
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(ListView).first, const Offset(0, -330));
+    await tester.pumpAndSettle();
+    await shot(tester, '12_home_week');
+
+    await tester.tap(find.text('やったことを記録'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('お風呂掃除').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('洗濯').last);
+    await tester.pumpAndSettle();
+    await shot(tester, '15_quick_record');
+    await tester.tapAt(const Offset(195, 40));
+    await tester.pumpAndSettle();
+    expect(find.text('やった人'), findsNothing);
+
+    await tester.ensureVisible(find.text('お風呂掃除').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('お風呂掃除').first);
     await shot(tester, '11_home_sheet');
     await tester.tapAt(const Offset(195, 40));
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(ListView).first, const Offset(0, -520));
-    await shot(tester, '12_home_week');
-
     await tester.tap(find.text('買い物').last);
     await shot(tester, '20_shopping');
+    await tester.tap(find.text('牛乳'));
+    await shot(tester, '21_shopping_item');
+    await tester.tapAt(const Offset(195, 40));
+    await tester.pumpAndSettle();
+    await tester.drag(find.text('食パン'), const Offset(-200, 0));
+    await shot(tester, '22_shopping_swipe');
 
     await tester.tap(find.text('家事').last);
     await shot(tester, '30_chores');
+    await tester.tap(find.byIcon(Icons.add_rounded).first);
+    await shot(tester, '34_add_chore_genre');
+    await tester.tapAt(const Offset(195, 40));
+    await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.text('資源ゴミ出し'));
     await tester.pumpAndSettle();

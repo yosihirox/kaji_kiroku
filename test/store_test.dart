@@ -6,6 +6,7 @@ import 'package:kaji_kiroku/domain/agenda.dart';
 import 'package:kaji_kiroku/domain/catalog.dart';
 import 'package:kaji_kiroku/domain/dates.dart';
 import 'package:kaji_kiroku/domain/models.dart';
+import 'package:kaji_kiroku/domain/notifications.dart';
 import 'package:kaji_kiroku/domain/recurrence.dart';
 import 'package:kaji_kiroku/domain/report.dart';
 import 'package:kaji_kiroku/state/app_store.dart';
@@ -590,6 +591,149 @@ void main() {
       expect(store.onboarded, isFalse);
       expect(store.chores, isEmpty);
       expect(store.members, isEmpty);
+    });
+  });
+
+  group('メッセージ', () {
+    test('送ったメッセージは1週間だけ出る', () {
+      final m = store.sendMessage(papa, ' いつもありがとう！ ')!;
+      expect(m.fromId, me);
+      expect(m.toId, papa);
+      expect(m.text, 'いつもありがとう！');
+      expect(store.recentMessages.single.id, m.id);
+
+      now = DateTime(2026, 11, 17, 23);
+      expect(store.recentMessages, hasLength(1));
+      now = DateTime(2026, 11, 18, 0, 1);
+      expect(store.recentMessages, isEmpty);
+    });
+
+    test('空のメッセージや、いない人あては送れない', () {
+      expect(store.sendMessage(papa, '   '), isNull);
+      expect(store.sendMessage('nobody', 'やあ'), isNull);
+      expect(store.recentMessages, isEmpty);
+    });
+
+    test('消せるのは送った本人だけ', () {
+      final m = store.sendMessage(papa, 'おつかれさま')!;
+      store.setCurrentMember(papa);
+      expect(store.deleteMessage(m.id), isFalse);
+      expect(store.recentMessages, hasLength(1));
+      store.setCurrentMember(me);
+      expect(store.deleteMessage(m.id), isTrue);
+      expect(store.recentMessages, isEmpty);
+    });
+
+    test('保存して読み戻せて、宛先の人の通知に入る', () async {
+      store.sendMessage(papa, 'ありがとう');
+      await store.flush();
+      final again = AppStore(storage, clock: () => now);
+      await again.load();
+      expect(again.recentMessages.single.text, 'ありがとう');
+
+      expect(
+        again.plannedNotices.where((n) => n.kind == NoticeKind.message),
+        isEmpty,
+      );
+      again.setCurrentMember(papa);
+      final notice = again.plannedNotices.singleWhere(
+        (n) => n.kind == NoticeKind.message,
+      );
+      expect(notice.title, 'わたしさんからメッセージ');
+      expect(notice.body, 'ありがとう');
+    });
+  });
+
+  group('ホームのがんばり枠', () {
+    test('今日やった人と、直近1週間でいちばん多い人', () {
+      final dishes = add('食器洗い', const Repeat.daily(), DateTime(2026, 11, 1));
+      now = DateTime(2026, 11, 9, 20);
+      store.recordUnplanned(dishes, doneById: papa);
+      store.recordUnplanned(dishes, doneById: papa);
+      store.recordUnplanned(dishes, doneById: papa);
+      now = DateTime(2026, 11, 11, 9);
+      store.recordUnplanned(dishes, doneById: me);
+      store.recordUnplanned(dishes, doneById: me);
+      store.recordUnplanned(dishes, doneById: papa);
+
+      final today = store.todayDoneCounts;
+      expect(
+        [for (final c in today) (c.member.id, c.count)],
+        [(me, 2), (papa, 1)],
+      );
+      final week = store.weekDoneCounts;
+      expect((week.first.member.id, week.first.count), (papa, 4));
+
+      // 8日前の分は数えない
+      now = DateTime(2026, 11, 17, 9);
+      expect(store.weekDoneCounts.first.count, 2);
+      expect(store.todayDoneCounts, isEmpty);
+    });
+  });
+
+  group('日付をえらんで見る', () {
+    test('その日の予定と、その日にやった記録が出る', () {
+      final daily = add('食器洗い', const Repeat.daily(), DateTime(2026, 11, 1));
+      add(
+        '窓ふき',
+        const Repeat.weekly({DateTime.saturday}),
+        DateTime(2026, 11, 1),
+      );
+      final extra = add('靴みがき', const Repeat.none(), DateTime(2026, 12, 1));
+
+      now = DateTime(2026, 11, 7, 10); // 土曜
+      store.complete(
+        store.agenda.todayItems.items.firstWhere((o) => o.chore.id == daily.id),
+        doneById: papa,
+      );
+      store.recordUnplanned(extra, doneById: me);
+      now = DateTime(2026, 11, 11, 9);
+
+      final sat = store.dayItems(DateTime(2026, 11, 7));
+      expect(names(sat.items), ['窓ふき', '食器洗い', '靴みがき']);
+      expect(sat.items[0].isPending, isTrue);
+      expect(sat.items[1].record?.doneById, papa);
+      expect(sat.items[2].isUnplanned, isTrue);
+
+      final sun = store.dayItems(DateTime(2026, 11, 8));
+      expect(names(sun.items), ['食器洗い']);
+      expect(sun.items.single.isPending, isTrue);
+    });
+  });
+
+  group('買い物の数', () {
+    test('数と単位をつけて、外せる。保存しても残る', () async {
+      final list = store.shoppingLists.first.id;
+      final item = store.addShoppingItem(list, '牛乳', note: '低脂肪')!;
+      expect(item.quantityLabel, isNull);
+
+      store.setShoppingQuantity(item.id, 2, unit: '本');
+      expect(store.shoppingItems(list).single.quantityLabel, '2本');
+      expect(store.shoppingItems(list).single.note, '低脂肪');
+
+      await store.flush();
+      final again = AppStore(storage, clock: () => now);
+      await again.load();
+      expect(again.shoppingItems(list).single.quantityLabel, '2本');
+
+      store.setShoppingQuantity(item.id, 12);
+      expect(store.shoppingItems(list).single.quantityLabel, '12本');
+      store.setShoppingQuantity(item.id, null);
+      expect(store.shoppingItems(list).single.quantityLabel, isNull);
+    });
+
+    test('単位はよく使う順で、重複がない', () {
+      expect(shoppingUnits.first, '個');
+      expect(shoppingUnits.toSet(), hasLength(shoppingUnits.length));
+    });
+
+    test('「よく買うもの」の表示・非表示を覚えている', () async {
+      expect(store.showShoppingSuggestions, isTrue);
+      store.setShowShoppingSuggestions(false);
+      await store.flush();
+      final again = AppStore(storage, clock: () => now);
+      await again.load();
+      expect(again.showShoppingSuggestions, isFalse);
     });
   });
 

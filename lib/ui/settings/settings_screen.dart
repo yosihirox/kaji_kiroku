@@ -11,7 +11,7 @@ import '../widgets/store_scope.dart';
 import 'notification_settings_screen.dart';
 
 /// アプリの版。pubspec.yaml の version と合わせる。
-const appVersionLabel = '試作版 0.2';
+const appVersionLabel = '試作版 0.3';
 
 /// 設定: 家族、通知、表示、データ。
 class SettingsScreen extends StatelessWidget {
