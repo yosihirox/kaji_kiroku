@@ -19,12 +19,14 @@ class ShoppingScreen extends StatefulWidget {
 class _ShoppingScreenState extends State<ShoppingScreen> {
   final _input = TextEditingController();
   final _inputFocus = FocusNode();
+  final _newListFocus = FocusNode();
   String? _listId;
 
   @override
   void dispose() {
     _input.dispose();
     _inputFocus.dispose();
+    _newListFocus.dispose();
     super.dispose();
   }
 
@@ -38,14 +40,11 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
     }
   }
 
-  Future<void> _addList() async {
-    final name = await askText(
-      context,
-      title: 'リストを追加',
-      hint: '例: ホームセンター',
-      confirm: '追加',
-    );
-    if (name == null || !mounted) return;
+  /// メニューの「リストを追加」。上の「＋ リスト」欄に入力してもらう。
+  void _addList() => _newListFocus.requestFocus();
+
+  void _createList(String name) {
+    if (name.trim().isEmpty) return;
     final list = context.readStore.addShoppingList(name);
     setState(() => _listId = list.id);
   }
@@ -147,11 +146,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                       onSelected: (_) => setState(() => _listId = l.id),
                     ),
                   ),
-                ActionChip(
-                  avatar: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('リスト'),
-                  onPressed: _addList,
-                ),
+                _NewListField(focusNode: _newListFocus, onSubmit: _createList),
               ],
             ),
           ),
@@ -177,11 +172,31 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
               children: [
-                if (suggestions.isNotEmpty) ...[
-                  const SectionLabel(
+                if (suggestions.isNotEmpty)
+                  SectionLabel(
                     'よく買うものから追加',
-                    padding: EdgeInsets.fromLTRB(4, 14, 4, 8),
+                    padding: const EdgeInsets.fromLTRB(4, 6, 0, 0),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          store.showShoppingSuggestions ? '表示' : '非表示',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        Transform.scale(
+                          scale: 0.8,
+                          child: Switch(
+                            value: store.showShoppingSuggestions,
+                            onChanged: store.setShowShoppingSuggestions,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                if (suggestions.isNotEmpty &&
+                    store.showShoppingSuggestions) ...[
                   // 横に流して、品物の一覧が下に押し出されないようにする。
                   SizedBox(
                     height: 44,
@@ -258,7 +273,11 @@ class _ItemsCard extends StatelessWidget {
         children: [
           for (var i = 0; i < items.length; i++) ...[
             if (i > 0) const Divider(indent: 56),
-            _ItemTile(items[i], key: ValueKey(items[i].id)),
+            _SwipeToDelete(
+              key: ValueKey(items[i].id),
+              onDelete: () => context.readStore.removeShoppingItem(items[i].id),
+              child: _ItemTile(items[i]),
+            ),
           ],
         ],
       ),
@@ -267,7 +286,7 @@ class _ItemsCard extends StatelessWidget {
 }
 
 class _ItemTile extends StatelessWidget {
-  const _ItemTile(this.item, {super.key});
+  const _ItemTile(this.item);
   final ShoppingItem item;
 
   @override
@@ -318,6 +337,10 @@ class _ItemTile extends StatelessWidget {
                 ),
               ),
             ),
+            if (item.quantityLabel != null) ...[
+              _QuantityPill(item.quantityLabel!, dimmed: checked),
+              const SizedBox(width: 10),
+            ],
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -346,7 +369,232 @@ class _ItemTile extends StatelessWidget {
   }
 }
 
-/// 品物の名前・メモの変更と削除。
+/// 数の左に出す「2個」の札。
+class _QuantityPill extends StatelessWidget {
+  const _QuantityPill(this.label, {this.dimmed = false});
+  final String label;
+  final bool dimmed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      constraints: const BoxConstraints(minWidth: 44),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: dimmed ? scheme.surfaceContainerHigh : scheme.primaryContainer,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        label,
+        textAlign: TextAlign.center,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: dimmed ? scheme.onSurfaceVariant : scheme.onPrimaryContainer,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+/// 左にスワイプすると「削除」ボタンが出る行。
+class _SwipeToDelete extends StatefulWidget {
+  const _SwipeToDelete({
+    super.key,
+    required this.child,
+    required this.onDelete,
+  });
+  final Widget child;
+  final VoidCallback onDelete;
+
+  @override
+  State<_SwipeToDelete> createState() => _SwipeToDeleteState();
+}
+
+class _SwipeToDeleteState extends State<_SwipeToDelete>
+    with SingleTickerProviderStateMixin {
+  static const _buttonWidth = 104.0;
+  late final _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 180),
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _dragUpdate(DragUpdateDetails d) {
+    _controller.value -= d.primaryDelta! / _buttonWidth;
+  }
+
+  void _dragEnd(DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    final open = v < -300 || (v <= 300 && _controller.value > 0.5);
+    open ? _controller.forward() : _controller.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return GestureDetector(
+      onHorizontalDragUpdate: _dragUpdate,
+      onHorizontalDragEnd: _dragEnd,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final offset = -_controller.value * _buttonWidth;
+          return Stack(
+            children: [
+              if (_controller.value > 0)
+                Positioned.fill(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: SizedBox(
+                      width: _buttonWidth,
+                      height: double.infinity,
+                      child: Material(
+                        color: scheme.error,
+                        child: InkWell(
+                          onTap: widget.onDelete,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.delete_rounded,
+                                color: scheme.onError,
+                                size: 22,
+                              ),
+                              Text(
+                                '削除',
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  color: scheme.onError,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              Transform.translate(
+                offset: Offset(offset, 0),
+                child: Material(color: theme.cardTheme.color, child: child),
+              ),
+              // 開いているときに行をタップしたら、閉じるだけにする。
+              if (_controller.value > 0)
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  right: _buttonWidth,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _controller.reverse,
+                  ),
+                ),
+            ],
+          );
+        },
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// 「＋ リスト」。タップするとその場で入力欄になり、すぐにキーボードが出る。
+class _NewListField extends StatefulWidget {
+  const _NewListField({required this.focusNode, required this.onSubmit});
+  final FocusNode focusNode;
+  final ValueChanged<String> onSubmit;
+
+  @override
+  State<_NewListField> createState() => _NewListFieldState();
+}
+
+class _NewListFieldState extends State<_NewListField> {
+  final _text = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.focusNode.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    widget.focusNode.removeListener(_changed);
+    _text.dispose();
+    super.dispose();
+  }
+
+  void _changed() => setState(() {});
+
+  void _submit() {
+    final name = _text.text.trim();
+    if (name.isEmpty) {
+      widget.focusNode.unfocus();
+      return;
+    }
+    widget.onSubmit(name);
+    _text.clear();
+    widget.focusNode.unfocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final active = widget.focusNode.hasFocus || _text.text.isNotEmpty;
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(22),
+      borderSide: BorderSide(color: scheme.outlineVariant),
+    );
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      width: active ? 200 : 104,
+      child: TextField(
+        controller: _text,
+        focusNode: widget.focusNode,
+        textInputAction: TextInputAction.done,
+        style: theme.textTheme.labelLarge,
+        decoration: InputDecoration(
+          isDense: true,
+          filled: true,
+          fillColor: scheme.surface,
+          hintText: active ? '例: ホームセンター' : 'リスト',
+          hintStyle: theme.textTheme.labelLarge?.copyWith(
+            color: active ? scheme.onSurfaceVariant : scheme.onSurface,
+          ),
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          prefixIcon: const Icon(Icons.add_rounded, size: 18),
+          prefixIconConstraints: const BoxConstraints(minWidth: 34),
+          suffixIcon: active
+              ? IconButton(
+                  tooltip: 'リストを追加',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _submit,
+                  icon: Icon(Icons.check_rounded, color: scheme.primary),
+                )
+              : null,
+          border: border,
+          enabledBorder: border,
+          focusedBorder: border.copyWith(
+            borderSide: BorderSide(color: scheme.primary, width: 1.5),
+          ),
+        ),
+        onSubmitted: (_) => _submit(),
+        onChanged: (_) => setState(() {}),
+      ),
+    );
+  }
+}
+
+/// 品物の名前・数・メモの変更と削除。
 class _ItemEditor extends StatefulWidget {
   const _ItemEditor({required this.item});
   final ShoppingItem item;
@@ -358,22 +606,26 @@ class _ItemEditor extends StatefulWidget {
 class _ItemEditorState extends State<_ItemEditor> {
   late final _name = TextEditingController(text: widget.item.name);
   late final _note = TextEditingController(text: widget.item.note);
+  late int? _quantity = widget.item.quantity;
+  late String _unit = widget.item.unit;
+  late final _bigQuantity = TextEditingController(
+    text: (widget.item.quantity ?? 0) > 10 ? '${widget.item.quantity}' : '',
+  );
 
   @override
   void dispose() {
     _name.dispose();
     _note.dispose();
+    _bigQuantity.dispose();
     super.dispose();
   }
 
   void _save() {
     final name = _name.text.trim();
     if (name.isEmpty) return;
-    context.readStore.updateShoppingItem(
-      widget.item.id,
-      name: name,
-      note: _note.text,
-    );
+    final store = context.readStore;
+    store.updateShoppingItem(widget.item.id, name: name, note: _note.text);
+    store.setShoppingQuantity(widget.item.id, _quantity, unit: _unit);
     Navigator.pop(context);
   }
 
@@ -381,6 +633,9 @@ class _ItemEditorState extends State<_ItemEditor> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final units = shoppingUnits.contains(_unit)
+        ? shoppingUnits
+        : [_unit, ...shoppingUnits];
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -392,15 +647,83 @@ class _ItemEditorState extends State<_ItemEditor> {
           textInputAction: TextInputAction.next,
           decoration: const InputDecoration(labelText: '品物'),
         ),
+        SectionLabel(
+          '数',
+          padding: const EdgeInsets.fromLTRB(0, 18, 0, 8),
+          trailing: _quantity == null
+              ? null
+              : Text(
+                  '$_quantity$_unit',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: scheme.primary,
+                  ),
+                ),
+        ),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            ChoiceChip(
+              label: const Text('なし'),
+              selected: _quantity == null,
+              onSelected: (_) => setState(() {
+                _quantity = null;
+                _bigQuantity.clear();
+              }),
+            ),
+            for (var n = 1; n <= 10; n++)
+              ChoiceChip(
+                label: Text('$n'),
+                selected: _quantity == n,
+                onSelected: (_) => setState(() {
+                  _quantity = n;
+                  _bigQuantity.clear();
+                }),
+              ),
+          ],
+        ),
         const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _bigQuantity,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(4),
+                ],
+                decoration: const InputDecoration(
+                  labelText: '11以上は入力',
+                  hintText: '例: 12',
+                ),
+                onChanged: (v) => setState(() {
+                  final n = int.tryParse(v);
+                  _quantity = n == null || n <= 0 ? null : n;
+                }),
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 128,
+              child: DropdownButtonFormField<String>(
+                initialValue: _unit,
+                decoration: const InputDecoration(labelText: '単位'),
+                menuMaxHeight: 320,
+                items: [
+                  for (final u in units)
+                    DropdownMenuItem(value: u, child: Text(u)),
+                ],
+                onChanged: (u) => setState(() => _unit = u ?? _unit),
+              ),
+            ),
+          ],
+        ),
+        const SectionLabel('メモ', padding: EdgeInsets.fromLTRB(0, 18, 0, 8)),
         TextField(
           controller: _note,
-          autofocus: widget.item.note.isEmpty,
           textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(
-            labelText: '数やメモ',
-            hintText: '例: 2本、低脂肪のもの',
-          ),
+          decoration: const InputDecoration(hintText: '例: 低脂肪のもの、特売なら2つ'),
           onSubmitted: (_) => _save(),
         ),
         const SizedBox(height: 20),

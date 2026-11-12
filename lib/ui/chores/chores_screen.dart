@@ -62,9 +62,17 @@ class ChoresScreen extends StatelessWidget {
               children: [
                 for (final g in genres) ...[
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+                    padding: const EdgeInsets.fromLTRB(0, 12, 4, 4),
                     child: Row(
                       children: [
+                        IconButton.filledTonal(
+                          tooltip: '「${g.name}」の家事を追加',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () =>
+                              showAddChoreSheet(context, genreId: g.id),
+                          icon: const Icon(Icons.add_rounded, size: 20),
+                        ),
+                        const SizedBox(width: 6),
                         GenreIcon(g, size: 32),
                         const SizedBox(width: 10),
                         Text(

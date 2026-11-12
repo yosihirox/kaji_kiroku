@@ -306,6 +306,35 @@ class ShoppingList {
   );
 }
 
+/// 買い物の数につける単位。よく使うものから順に並べる。
+const shoppingUnits = <String>[
+  '個',
+  'パック',
+  '本',
+  '袋',
+  '枚',
+  '箱',
+  '玉',
+  '束',
+  '缶',
+  '切れ',
+  '房',
+  '尾',
+  '丁',
+  '株',
+  'kg',
+  'g',
+  'L',
+  'ml',
+  'セット',
+  '組',
+  '足',
+  '台',
+];
+
+/// 単位をえらばなかったときの単位。
+const defaultShoppingUnit = '個';
+
 /// 買い物リストの品物。
 ///
 /// 「買うもの」→ カゴに入れた（[inCart]）→ 買い物おわりで購入済み（[boughtAt]）と進む。
@@ -317,6 +346,8 @@ class ShoppingItem {
     required this.name,
     required this.addedAt,
     this.note = '',
+    this.quantity,
+    this.unit = defaultShoppingUnit,
     this.addedById,
     this.inCart = false,
     this.boughtById,
@@ -327,8 +358,14 @@ class ShoppingItem {
   final String listId;
   final String name;
 
-  /// 数量やメモ（「2本」「低脂肪のやつ」など）。
+  /// メモ（「低脂肪のやつ」など）。0.2 までは数もここに書いていた。
   final String note;
+
+  /// 買う数。null は数を決めていない。
+  final int? quantity;
+
+  /// 数の単位（「個」「パック」など）。
+  final String unit;
   final String? addedById;
   final DateTime addedAt;
   final bool inCart;
@@ -337,9 +374,14 @@ class ShoppingItem {
 
   bool get isBought => boughtAt != null;
 
+  /// 「2個」のような表示。数がなければ null。
+  String? get quantityLabel => quantity == null ? null : '$quantity$unit';
+
   ShoppingItem copyWith({
     String? name,
     String? note,
+    Object? quantity = _keep,
+    String? unit,
     bool? inCart,
     Object? boughtById = _keep,
     Object? boughtAt = _keep,
@@ -348,6 +390,8 @@ class ShoppingItem {
     listId: listId,
     name: name ?? this.name,
     note: note ?? this.note,
+    quantity: identical(quantity, _keep) ? this.quantity : quantity as int?,
+    unit: unit ?? this.unit,
     addedById: addedById,
     addedAt: addedAt,
     inCart: inCart ?? this.inCart,
@@ -364,6 +408,8 @@ class ShoppingItem {
     'listId': listId,
     'name': name,
     if (note.isNotEmpty) 'note': note,
+    if (quantity != null) 'quantity': quantity,
+    if (unit != defaultShoppingUnit) 'unit': unit,
     'addedBy': addedById,
     'addedAt': addedAt.toIso8601String(),
     'inCart': inCart,
@@ -376,11 +422,46 @@ class ShoppingItem {
     listId: _str(j['listId']),
     name: _str(j['name'], '？'),
     note: _str(j['note']),
+    quantity: _intOrNull(j['quantity']),
+    unit: _str(j['unit'], defaultShoppingUnit),
     addedById: j['addedBy'] as String?,
     addedAt: _time(j['addedAt']),
     inCart: _bool(j['inCart']),
     boughtById: j['boughtBy'] as String?,
     boughtAt: j['boughtAt'] is String ? DateTime.tryParse(j['boughtAt']) : null,
+  );
+}
+
+/// 家族に送るひとことメッセージ。ホームと「がんばり」に1週間出す。
+class FamilyMessage {
+  const FamilyMessage({
+    required this.id,
+    required this.fromId,
+    required this.toId,
+    required this.text,
+    required this.at,
+  });
+
+  final String id;
+  final String fromId;
+  final String toId;
+  final String text;
+  final DateTime at;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'from': fromId,
+    'to': toId,
+    'text': text,
+    'at': at.toIso8601String(),
+  };
+
+  factory FamilyMessage.fromJson(Map<String, dynamic> j) => FamilyMessage(
+    id: _str(j['id']),
+    fromId: _str(j['from']),
+    toId: _str(j['to']),
+    text: _str(j['text']),
+    at: _time(j['at']),
   );
 }
 
@@ -396,6 +477,7 @@ class NotificationSettings {
     this.familyDone = false,
     this.shopping = true,
     this.thanks = true,
+    this.messages = true,
     this.quietHours = true,
     this.quietStart = 22 * 60,
     this.quietEnd = 7 * 60,
@@ -423,6 +505,9 @@ class NotificationSettings {
 
   /// スタンプをもらったとき。
   final bool thanks;
+
+  /// 家族からメッセージが届いたとき。
+  final bool messages;
 
   /// おやすみ時間（この間は音を鳴らさない）。
   final bool quietHours;
@@ -453,6 +538,7 @@ class NotificationSettings {
     bool? familyDone,
     bool? shopping,
     bool? thanks,
+    bool? messages,
     bool? quietHours,
     int? quietStart,
     int? quietEnd,
@@ -468,6 +554,7 @@ class NotificationSettings {
     familyDone: familyDone ?? this.familyDone,
     shopping: shopping ?? this.shopping,
     thanks: thanks ?? this.thanks,
+    messages: messages ?? this.messages,
     quietHours: quietHours ?? this.quietHours,
     quietStart: quietStart ?? this.quietStart,
     quietEnd: quietEnd ?? this.quietEnd,
@@ -485,6 +572,7 @@ class NotificationSettings {
     'familyDone': familyDone,
     'shopping': shopping,
     'thanks': thanks,
+    'messages': messages,
     'quietHours': quietHours,
     'quietStart': quietStart,
     'quietEnd': quietEnd,
@@ -504,6 +592,7 @@ class NotificationSettings {
       familyDone: _bool(j['familyDone'], d.familyDone),
       shopping: _bool(j['shopping'], d.shopping),
       thanks: _bool(j['thanks'], d.thanks),
+      messages: _bool(j['messages'], d.messages),
       quietHours: _bool(j['quietHours'], d.quietHours),
       quietStart: _int(j['quietStart'], d.quietStart),
       quietEnd: _int(j['quietEnd'], d.quietEnd),

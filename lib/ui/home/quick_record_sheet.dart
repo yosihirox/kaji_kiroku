@@ -23,19 +23,41 @@ class _QuickRecordSheetState extends State<_QuickRecordSheet> {
   String? _doneById;
   String _genreId = otherGenreId;
 
+  /// えらんだ家事（えらんだ順）。
+  final _selected = <String>[];
+
   @override
   void dispose() {
     _name.dispose();
     super.dispose();
   }
 
-  void _done(String choreName) {
+  void _done(String label) {
     HapticFeedback.lightImpact();
-    final messenger = ScaffoldMessenger.of(context);
-    Navigator.pop(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(content: Text('「$choreName」を記録しました。おつかれさま')),
+    final navigator = Navigator.of(context);
+    showNotice(context, '$labelを記録しました。おつかれさま');
+    navigator.pop();
+  }
+
+  void _toggle(String choreId) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (!_selected.remove(choreId)) _selected.add(choreId);
+    });
+  }
+
+  /// えらんだ家事をまとめて完了にする。
+  void _completeSelected(String? doneById) {
+    final store = context.readStore;
+    final chores = [for (final id in _selected) ?store.choreById(id)];
+    if (chores.isEmpty) return;
+    for (final c in chores) {
+      store.recordUnplanned(c, doneById: doneById);
+    }
+    _done(
+      chores.length == 1
+          ? '「${chores.first.name}」'
+          : '「${chores.first.name}」ほか${chores.length - 1}件',
     );
   }
 
@@ -102,7 +124,7 @@ class _QuickRecordSheetState extends State<_QuickRecordSheet> {
                   _genreId,
                   doneById: doneById,
                 );
-                _done(query);
+                _done('「$query」');
               },
               icon: const Icon(Icons.check_rounded),
               label: Text('「$query」を記録'),
@@ -117,42 +139,75 @@ class _QuickRecordSheetState extends State<_QuickRecordSheet> {
           for (final c in matches)
             _ChoreRow(
               c,
-              onTap: () {
-                store.recordUnplanned(c, doneById: doneById);
-                _done(c.name);
-              },
+              selected: _selected.contains(c.id),
+              onTap: () => _toggle(c.id),
             ),
         ],
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _selected.isEmpty
+                ? null
+                : () => _completeSelected(doneById),
+            icon: const Icon(Icons.check_rounded),
+            label: Text(_selected.isEmpty ? '完了' : '完了（${_selected.length}件）'),
+          ),
+        ),
+        if (_selected.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Center(
+              child: Text(
+                '家事をタップしてえらんでから「完了」を押します',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ),
       ],
     );
   }
 }
 
 class _ChoreRow extends StatelessWidget {
-  const _ChoreRow(this.chore, {required this.onTap});
+  const _ChoreRow(this.chore, {required this.selected, required this.onTap});
   final Chore chore;
+  final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final store = context.store;
     final theme = Theme.of(context);
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            GenreIcon(store.genreById(chore.genreId), size: 36),
-            const SizedBox(width: 12),
-            Expanded(child: Text(chore.name, style: theme.textTheme.bodyLarge)),
-            Icon(
-              Icons.add_task_rounded,
-              color: theme.colorScheme.primary,
-              size: 22,
+    final scheme = theme.colorScheme;
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: Material(
+        color: selected ? scheme.primaryContainer : Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+            child: Row(
+              children: [
+                GenreIcon(store.genreById(chore.genreId), size: 36),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(chore.name, style: theme.textTheme.bodyLarge),
+                ),
+                Icon(
+                  selected
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: selected ? scheme.primary : scheme.outline,
+                  size: 24,
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

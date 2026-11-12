@@ -6,12 +6,19 @@ import '../widgets/store_scope.dart';
 import 'chore_editor.dart';
 
 /// 家事を追加するシート。自分で作るか、よくある家事からえらぶ。
-Future<void> showAddChoreSheet(BuildContext context) {
-  return showAppSheet<void>(context, builder: (_) => const _AddChoreSheet());
+///
+/// [genreId] を渡すと、そのジャンルのよくある家事だけを出し、
+/// 「自分で作る」もそのジャンルをえらんだ状態で開く。
+Future<void> showAddChoreSheet(BuildContext context, {String? genreId}) {
+  return showAppSheet<void>(
+    context,
+    builder: (_) => _AddChoreSheet(genreId: genreId),
+  );
 }
 
 class _AddChoreSheet extends StatelessWidget {
-  const _AddChoreSheet();
+  const _AddChoreSheet({this.genreId});
+  final String? genreId;
 
   @override
   Widget build(BuildContext context) {
@@ -23,14 +30,38 @@ class _AddChoreSheet extends StatelessWidget {
     void open({ChoreTemplate? template}) {
       final navigator = Navigator.of(context);
       navigator.pop();
-      navigator.push(choreEditorRoute(template: template));
+      navigator.push(
+        choreEditorRoute(
+          template: template,
+          genreId: template == null ? genreId : null,
+        ),
+      );
     }
+
+    final only = genreId == null ? null : store.genreById(genreId!);
+    final genres = only == null ? store.visibleGenres : [only];
+    final hasTemplates = genres.any(
+      (g) => choreTemplates.any((t) => t.genreId == g.id),
+    );
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('家事を追加', style: theme.textTheme.titleLarge),
+        Row(
+          children: [
+            if (only != null) ...[
+              GenreIcon(only, size: 32),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: Text(
+                only == null ? '家事を追加' : '「${only.name}」の家事を追加',
+                style: theme.textTheme.titleLarge,
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 14),
         SizedBox(
           width: double.infinity,
@@ -40,25 +71,30 @@ class _AddChoreSheet extends StatelessWidget {
             label: const Text('自分で作る'),
           ),
         ),
-        const SizedBox(height: 20),
-        Text('よくある家事からえらぶ', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 2),
-        Text(
-          'くり返しの設定まで入った状態で開きます。内容はその場で変えられます。',
-          style: theme.textTheme.bodySmall,
-        ),
-        for (final g in store.visibleGenres)
+        if (hasTemplates) ...[
+          const SizedBox(height: 20),
+          Text('よくある家事からえらぶ', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 2),
+          Text(
+            'くり返しの設定まで入った状態で開きます。内容はその場で変えられます。',
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+        for (final g in genres)
           if (choreTemplates.any((t) => t.genreId == g.id)) ...[
-            Padding(
-              padding: const EdgeInsets.only(top: 16, bottom: 8),
-              child: Row(
-                children: [
-                  GenreIcon(g, size: 28),
-                  const SizedBox(width: 8),
-                  Text(g.name, style: theme.textTheme.titleSmall),
-                ],
+            if (only != null)
+              const SizedBox(height: 12)
+            else
+              Padding(
+                padding: const EdgeInsets.only(top: 16, bottom: 8),
+                child: Row(
+                  children: [
+                    GenreIcon(g, size: 28),
+                    const SizedBox(width: 8),
+                    Text(g.name, style: theme.textTheme.titleSmall),
+                  ],
+                ),
               ),
-            ),
             Wrap(
               spacing: 8,
               runSpacing: 8,

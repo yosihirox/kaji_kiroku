@@ -245,3 +245,37 @@ DateTime? nextDueDate(Chore chore, Iterable<Record> records, DateTime today) {
       return null;
   }
 }
+
+/// 指定した1日分の家事（ホームで日付をえらんで、さかのぼって見るとき用）。
+///
+/// その日が予定日だった家事と、その日の分として残っている記録（予定外の
+/// 「ついでにやった」を含む）を並べる。「やった日からN日後」の家事は、
+/// 予定日がやった日で動くので、記録があるときだけ出す。
+AgendaDay buildDayItems({
+  required Iterable<Chore> chores,
+  required Iterable<Record> records,
+  required DateTime date,
+}) {
+  final d = dateOnly(date);
+  final index = _RecordIndex(records);
+  final choreById = {for (final c in chores) c.id: c};
+  final items = <Occurrence>[];
+  final shown = <String>{};
+
+  for (final chore in chores) {
+    if (chore.archived) continue;
+    if (chore.repeat.type == RepeatType.afterDone) continue;
+    if (!chore.repeat.occursOn(d, chore.start)) continue;
+    final record = index.planned(chore.id)[d];
+    items.add(Occurrence(chore: chore, date: d, record: record));
+    if (record != null) shown.add(record.id);
+  }
+  for (final r in records) {
+    if (shown.contains(r.id) || r.date != d) continue;
+    final chore = choreById[r.choreId];
+    if (chore == null) continue;
+    items.add(Occurrence(chore: chore, date: d, record: r));
+  }
+  items.sort(_compareInDay);
+  return AgendaDay(d, items);
+}

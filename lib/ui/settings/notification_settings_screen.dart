@@ -164,6 +164,12 @@ class NotificationSettingsScreen extends StatelessWidget {
                   value: n.thanks,
                   onChanged: (v) => update(n.copyWith(thanks: v)),
                 ),
+                const Divider(indent: 16),
+                _SwitchRow(
+                  title: 'メッセージが届いたとき',
+                  value: n.messages,
+                  onChanged: (v) => update(n.copyWith(messages: v)),
+                ),
               ],
             ),
           ),
@@ -367,6 +373,7 @@ class _Preview extends StatelessWidget {
                           NoticeKind.beforeDue => Icons.schedule_rounded,
                           NoticeKind.overdue =>
                             Icons.notification_important_rounded,
+                          NoticeKind.message => Icons.mail_rounded,
                         },
                         size: 18,
                         color: scheme.primary,

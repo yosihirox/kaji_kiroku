@@ -8,7 +8,7 @@ import 'agenda.dart';
 import 'dates.dart';
 import 'models.dart';
 
-enum NoticeKind { morning, beforeDue, overdue }
+enum NoticeKind { morning, beforeDue, overdue, message }
 
 /// 届く予定の通知1件。
 class PlannedNotice {
@@ -35,6 +35,8 @@ List<PlannedNotice> planNotices({
   required Agenda agenda,
   required NotificationSettings settings,
   required String? memberId,
+  Iterable<FamilyMessage> messages = const [],
+  List<Member> members = const [],
 }) {
   bool audible(Occurrence o) =>
       !settings.mutedGenreIds.contains(o.chore.genreId);
@@ -95,6 +97,20 @@ List<PlannedNotice> planNotices({
         NoticeKind.overdue,
         'まだ終わっていない家事が${left.length}件あります',
         '$names$more',
+      );
+    }
+  }
+
+  if (settings.messages && memberId != null) {
+    final names = {for (final m in members) m.id: m.name};
+    for (final m in messages) {
+      if (m.toId != memberId || m.fromId == memberId) continue;
+      if (!isSameDay(m.at, agenda.today)) continue;
+      add(
+        m.at.hour * 60 + m.at.minute,
+        NoticeKind.message,
+        '${names[m.fromId] ?? '家族'}さんからメッセージ',
+        m.text,
       );
     }
   }

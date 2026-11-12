@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../domain/agenda.dart';
 import '../../domain/dates.dart';
+import '../../domain/report.dart';
 import '../chores/add_chore_sheet.dart';
+import '../messages/messages.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/store_scope.dart';
@@ -19,6 +21,15 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _onlyMine = false;
+
+  /// カレンダーでえらんだ日。null なら今日からの1週間を出す。
+  DateTime? _date;
+
+  Future<void> _pickDate(DateTime today) async {
+    final picked = await showDayPicker(context, initial: _date ?? today);
+    if (picked == null || !mounted) return;
+    setState(() => _date = isSameDay(picked, today) ? null : picked);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +49,13 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
     final today = days.first;
     final hasChores = store.chores.isNotEmpty;
+    final picked = _date;
+    final pickedDay = picked == null
+        ? null
+        : () {
+            final d = store.dayItems(picked);
+            return AgendaDay(d.date, d.items.where(visible).toList());
+          }();
 
     return Scaffold(
       body: SafeArea(
@@ -45,10 +63,23 @@ class _HomeScreenState extends State<HomeScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 104),
           children: [
-            _Header(today: agenda.today),
+            _Header(
+              date: picked ?? agenda.today,
+              isToday: picked == null,
+              onPickDate: () => _pickDate(agenda.today),
+            ),
             const SizedBox(height: 14),
-            _SummaryCard(today: today, overdueCount: overdue.length),
+            const _CheerCard(),
             const SizedBox(height: 12),
+            if (pickedDay == null) ...[
+              _SummaryCard(today: today, overdueCount: overdue.length),
+              const SizedBox(height: 12),
+            ] else
+              _PastDayBanner(
+                date: pickedDay.date,
+                today: agenda.today,
+                onBack: () => setState(() => _date = null),
+              ),
             // せまい画面や大きい文字では、2段に折り返す。
             Wrap(
               alignment: WrapAlignment.spaceBetween,
@@ -71,14 +102,36 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
-                TextButton.icon(
-                  onPressed: () => showQuickRecordSheet(context),
-                  icon: const Icon(Icons.bolt_rounded, size: 20),
-                  label: const Text('やったことを記録'),
+                Wrap(
+                  children: [
+                    TextButton.icon(
+                      onPressed: () => showQuickRecordSheet(context),
+                      icon: const Icon(Icons.bolt_rounded, size: 20),
+                      label: const Text('やったことを記録'),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => showAddChoreSheet(context),
+                      icon: const Icon(Icons.add_rounded, size: 20),
+                      label: const Text('家事を追加'),
+                    ),
+                  ],
                 ),
               ],
             ),
-            if (!hasChores && today.items.isEmpty && overdue.isEmpty)
+            if (pickedDay != null) ...[
+              _DayHeader(
+                title: relativeDayLabel(pickedDay.date, agenda.today),
+                subtitle: formatDate(pickedDay.date),
+                emphasized: true,
+                trailing: pickedDay.items.isEmpty
+                    ? null
+                    : '完了${pickedDay.doneCount}件 / ${pickedDay.items.length}件',
+              ),
+              if (pickedDay.items.isEmpty)
+                const _EmptyDayCard(message: 'この日の家事はありません。')
+              else
+                _ItemsCard(items: pickedDay.items),
+            ] else if (!hasChores && today.items.isEmpty && overdue.isEmpty)
               _FirstStepsCard(onAdd: () => showAddChoreSheet(context))
             else ...[
               if (overdue.isNotEmpty) ...[
@@ -122,20 +175,20 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'home-add',
-        onPressed: () => showAddChoreSheet(context),
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('家事を追加'),
-      ),
     );
   }
 }
 
-/// 日付と、この端末を使っている人の切り替え。
+/// 日付と、この端末を使っている人の切り替え。日付をタップするとカレンダーが開く。
 class _Header extends StatelessWidget {
-  const _Header({required this.today});
-  final DateTime today;
+  const _Header({
+    required this.date,
+    required this.isToday,
+    required this.onPickDate,
+  });
+  final DateTime date;
+  final bool isToday;
+  final VoidCallback onPickDate;
 
   @override
   Widget build(BuildContext context) {
@@ -144,18 +197,43 @@ class _Header extends StatelessWidget {
     final scheme = theme.colorScheme;
     final me = store.currentMember;
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                formatDateLong(today),
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: scheme.onSurfaceVariant,
+              Tooltip(
+                message: 'カレンダーで日付をえらぶ',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: onPickDate,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.calendar_month_rounded,
+                          size: 28,
+                          color: scheme.primary,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            formatDateLong(date),
+                            style: theme.textTheme.headlineMedium,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-              Text('今日のやること', style: theme.textTheme.headlineMedium),
+              Text(
+                isToday ? '今日のやること' : 'この日の家事',
+                style: theme.textTheme.headlineMedium,
+              ),
             ],
           ),
         ),
@@ -441,7 +519,8 @@ class _ItemsCard extends StatelessWidget {
 }
 
 class _EmptyDayCard extends StatelessWidget {
-  const _EmptyDayCard();
+  const _EmptyDayCard({this.message = '今日の予定はありません。'});
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -456,7 +535,7 @@ class _EmptyDayCard extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                '今日の予定はありません。',
+                message,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -491,6 +570,213 @@ class _FirstStepsCard extends StatelessWidget {
               icon: const Icon(Icons.add_rounded),
               label: const Text('家事を追加'),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// カレンダーで1日えらぶ。「決定」で決まり、外をタップすると何も変えずに閉じる。
+Future<DateTime?> showDayPicker(
+  BuildContext context, {
+  required DateTime initial,
+}) {
+  final today = context.readStore.today;
+  final first = DateTime(today.year - 3, 1, 1);
+  final last = DateTime(today.year + 1, 12, 31);
+  var selected = initial.isBefore(first) || initial.isAfter(last)
+      ? today
+      : initial;
+  return showDialog<DateTime>(
+    context: context,
+    builder: (context) {
+      final theme = Theme.of(context);
+      return Dialog(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 16, 8, 16),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('見たい日をえらぶ', style: theme.textTheme.titleMedium),
+                SizedBox(
+                  width: 320,
+                  child: CalendarDatePicker(
+                    initialDate: selected,
+                    firstDate: first,
+                    lastDate: last,
+                    currentDate: today,
+                    onDateChanged: (d) => selected = d,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(context, selected),
+                      child: const Text('決定'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// 今日以外の日を見ているときの案内と「今日に戻る」。
+class _PastDayBanner extends StatelessWidget {
+  const _PastDayBanner({
+    required this.date,
+    required this.today,
+    required this.onBack,
+  });
+  final DateTime date;
+  final DateTime today;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.history_rounded, color: scheme.onSecondaryContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '${formatDate(date)}の家事を見ています',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.onSecondaryContainer,
+              ),
+            ),
+          ),
+          TextButton(onPressed: onBack, child: const Text('今日に戻る')),
+        ],
+      ),
+    );
+  }
+}
+
+/// ホームの「がんばり」枠: 今日家事をした人、この1週間で1番がんばった人、メッセージ。
+class _CheerCard extends StatelessWidget {
+  const _CheerCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.store;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final colors = AppColors.of(context);
+    final today = store.todayDoneCounts;
+    final week = store.weekDoneCounts;
+    final top = week.isEmpty
+        ? const <MemberCount>[]
+        : week.where((c) => c.count == week.first.count).toList();
+
+    Widget countRow(MemberCount c, {bool strong = false}) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          MemberAvatar(c.member, size: strong ? 28 : 24),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${c.member.name}さん',
+              style: strong
+                  ? theme.textTheme.titleMedium
+                  : theme.textTheme.bodyLarge,
+            ),
+          ),
+          Text(
+            '${c.count}件',
+            style:
+                (strong
+                        ? theme.textTheme.titleMedium
+                        : theme.textTheme.labelLarge)
+                    ?.copyWith(color: strong ? colors.celebrate : null),
+          ),
+        ],
+      ),
+    );
+
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 14, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.volunteer_activism_rounded,
+                  size: 20,
+                  color: scheme.primary,
+                ),
+                const SizedBox(width: 6),
+                Text('がんばり', style: theme.textTheme.titleMedium),
+                const SizedBox(width: 8),
+                Text('今日', style: theme.textTheme.bodySmall),
+              ],
+            ),
+            const SizedBox(height: 6),
+            if (today.isEmpty)
+              Text(
+                '今日はまだ記録がありません。',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              )
+            else
+              for (final c in today) countRow(c),
+            if (top.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                'この1週間で1番家事をがんばった人',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 2),
+              for (final c in top) countRow(c, strong: true),
+              const SizedBox(height: 4),
+              Text(
+                'がんばりました！おつかれさま！ありがとう！',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colors.celebrate,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.tonalIcon(
+                onPressed: () => showSendMessageSheet(context),
+                icon: const Icon(Icons.mail_rounded, size: 18),
+                label: const Text('メッセージを送る'),
+              ),
+            ),
+            if (store.recentMessages.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const RecentMessages(),
+            ],
           ],
         ),
       ),

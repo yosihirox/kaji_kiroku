@@ -14,6 +14,27 @@
 | --- | --- | --- | --- |
 | ![](docs/screenshots/33_add_chore.png) | ![](docs/screenshots/32_chore_editor_repeat.png) | ![](docs/screenshots/51_notifications.png) | ![](docs/screenshots/60_home_dark.png) |
 
+## 試作版 0.3 で変わったこと
+
+ななちゃんに使ってもらって出た要望を反映しました。0.2 のデータはそのまま使えます。
+
+| 画面 | 変わったこと |
+| --- | --- |
+| ホーム | 日付を大きくし、タップするとカレンダーが開く。「決定」でその日の家事をさかのぼって見られる（外をタップすると変えずに閉じる）。日付の下に「がんばり」枠（今日家事をした人と件数、この1週間で1番がんばった人）。家族にメッセージを送れる。「家事を追加」は「やったことを記録」の横へ。「やったことを記録」は、えらんでから「完了」でまとめて記録 |
+| メッセージ | 宛先（最初は今日いちばん家事をした人）と本文を入れて送ると、ホームと「がんばり」に1週間出る。送った本人だけ × で消せる。届いたメッセージは通知の対象 |
+| 家事 | ジャンルの左の「＋」から、そのジャンルの家事だけをえらんで追加。「自分で作る」はジャンルがえらばれた状態で開く |
+| 買い物 | 「よく買うものから追加」の表示・非表示を切り替え。「＋ リスト」はその場で入力（すぐキーボードが出る）。数（1〜10 はタップ、11以上は入力）と単位（個・パック・本 …）をメモと分け、品物の左に表示。左スワイプで「削除」 |
+| がんばり | この1週間のメッセージを表示。右下に「メッセージを送る」 |
+| お知らせ | 「完了！」「買い出しを記録しました」は3秒で消え、タップやタブの切り替えでも消える |
+
+| ホーム | カレンダー | メッセージ | やったことを記録 |
+| --- | --- | --- | --- |
+| ![](docs/screenshots/10_home.png) | ![](docs/screenshots/13_home_calendar.png) | ![](docs/screenshots/14_message_sheet.png) | ![](docs/screenshots/15_quick_record.png) |
+
+| 買い物 | 数と単位 | 左スワイプで削除 | ジャンルから追加 |
+| --- | --- | --- | --- |
+| ![](docs/screenshots/20_shopping.png) | ![](docs/screenshots/21_shopping_item.png) | ![](docs/screenshots/22_shopping_swipe.png) | ![](docs/screenshots/34_add_chore_genre.png) |
+
 ## 試作版 0.2 でできること
 
 0.1 を土台から作り直しました。0.1 で入れたデータは、そのまま引き継がれます。
@@ -62,14 +83,14 @@ lib/
   main.dart / app.dart   起動、テーマ、画面の切り替え
   domain/                画面に依存しない中身
     recurrence.dart        くり返しルールと日付計算
-    models.dart            メンバー・ジャンル・家事・記録・買い物・通知設定
+    models.dart            メンバー・ジャンル・家事・記録・買い物・メッセージ・通知設定
     agenda.dart            「今日やること」と、やり忘れの組み立て
     report.dart            がんばりの集計
     notifications.dart     届く通知の組み立て
     catalog.dart           初期ジャンル、家事のひな形、色
   data/                  保存の形（JSON）と、0.1 からの引き継ぎ
   state/app_store.dart   状態の管理と保存
-  ui/                    画面（home / shopping / chores / report / settings / onboarding）
+  ui/                    画面（home / shopping / chores / report / messages / settings / onboarding）
 test/                    くり返し・状態管理・通知・画面操作のテスト
 tool/                    画面の画像、アイコン、フォントを作り直すスクリプト
 ```
@@ -80,7 +101,7 @@ tool/                    画面の画像、アイコン、フォントを作り�
 ## 開発メモ
 
 ```sh
-flutter analyze
+flutter analyze --no-fatal-infos
 flutter test                              # テスト
 flutter test tool/screenshots_test.dart   # docs/screenshots の画像を作り直す
 python3 tool/make_icons.py                # アイコンを作り直す（Pillow が必要）

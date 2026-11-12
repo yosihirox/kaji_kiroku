@@ -7,6 +7,7 @@ import 'home/home_screen.dart';
 import 'report/report_screen.dart';
 import 'settings/settings_screen.dart';
 import 'shopping/shopping_screen.dart';
+import 'widgets/common.dart';
 import 'widgets/store_scope.dart';
 
 /// 画面下の5つのタブ。
@@ -77,7 +78,11 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
         ),
         child: NavigationBar(
           selectedIndex: _index,
-          onDestinationSelected: (i) => setState(() => _index = i),
+          onDestinationSelected: (i) {
+            // タブを切り替えたら、前の画面のお知らせは引っこめる。
+            if (i != _index) hideNotice(context);
+            setState(() => _index = i);
+          },
           destinations: [
             NavigationDestination(
               icon: withBadge(badge, Icons.wb_sunny_outlined),
