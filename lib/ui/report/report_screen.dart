@@ -34,6 +34,7 @@ class _ReportScreenState extends State<ReportScreen> {
         ? ReportPeriod.week(store.today, _offset)
         : ReportPeriod.month(store.today, _offset);
     final report = store.report(period);
+    final messages = store.messagesBetween(period.from, period.to);
     final periodName = _offset == 0
         ? (_week ? '今週' : '今月')
         : _offset == -1
@@ -41,7 +42,12 @@ class _ReportScreenState extends State<ReportScreen> {
         : period.label;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('がんばり')),
+      appBar: AppBar(
+        title: const ScreenTitle(
+          'がんばり',
+          icon: Icons.volunteer_activism_rounded,
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 104),
         children: [
@@ -108,9 +114,9 @@ class _ReportScreenState extends State<ReportScreen> {
             ),
           if (report.total > 0)
             _SummaryCard(report: report, periodName: periodName),
-          if (store.recentMessages.isNotEmpty) ...[
-            const SectionLabel('この1週間のメッセージ'),
-            const RecentMessages(),
+          if (messages.isNotEmpty) ...[
+            SectionLabel('$periodNameのメッセージ'),
+            MessageList(messages),
           ],
           if (report.total > 0) ...[
             const SizedBox(height: 12),

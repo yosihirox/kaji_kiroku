@@ -28,7 +28,7 @@ class ChoresScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('家事'),
+        title: const ScreenTitle('家事', icon: Icons.checklist_rounded),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 8),

@@ -124,6 +124,8 @@ Agenda buildAgenda({
   required Iterable<Record> records,
   required DateTime today,
   int days = 7,
+  Map<String, int> genreOrder = const {},
+  bool doneLast = true,
 }) {
   final t = dateOnly(today);
   final end = addDays(t, days - 1);
@@ -201,8 +203,9 @@ Agenda buildAgenda({
     final byDate = a.date.compareTo(b.date);
     return byDate != 0 ? byDate : a.chore.name.compareTo(b.chore.name);
   });
+  final order = dayOrder(genreOrder: genreOrder, doneLast: doneLast);
   for (final list in byDay.values) {
-    list.sort(_compareInDay);
+    list.sort(order);
   }
   return Agenda(
     today: t,
@@ -211,14 +214,37 @@ Agenda buildAgenda({
   );
 }
 
-/// 1日の中の並び順: まだのものを先に（時刻が早い順）、終わったものは後ろへ。
-int _compareInDay(Occurrence a, Occurrence b) {
-  if (a.isResolved != b.isResolved) return a.isResolved ? 1 : -1;
-  if (a.isResolved) return a.record!.at.compareTo(b.record!.at);
-  final at = a.chore.dueMinutes ?? 24 * 60;
-  final bt = b.chore.dueMinutes ?? 24 * 60;
-  if (at != bt) return at.compareTo(bt);
-  return a.chore.name.compareTo(b.chore.name);
+/// 1日の中の並び順。
+///
+/// 時刻を決めた家事を先に時刻順（ジャンルは問わない）、時刻のない家事はその後に
+/// ジャンルの並び順（[genreOrder]）で並べる。[doneLast] が true なら、完了・スキップ
+/// したものはその日の最後へ（やった順）。false なら完了しても位置は変えない。
+Comparator<Occurrence> dayOrder({
+  Map<String, int> genreOrder = const {},
+  bool doneLast = true,
+}) {
+  return (a, b) {
+    if (doneLast) {
+      if (a.isResolved != b.isResolved) return a.isResolved ? 1 : -1;
+      if (a.isResolved) {
+        final byAt = a.record!.at.compareTo(b.record!.at);
+        if (byAt != 0) return byAt;
+      }
+    }
+    final at = a.chore.dueMinutes;
+    final bt = b.chore.dueMinutes;
+    if ((at == null) != (bt == null)) return at == null ? 1 : -1;
+    if (at != null && bt != null && at != bt) return at.compareTo(bt);
+    if (at == null) {
+      const last = 1 << 20;
+      final ga = genreOrder[a.chore.genreId] ?? last;
+      final gb = genreOrder[b.chore.genreId] ?? last;
+      if (ga != gb) return ga.compareTo(gb);
+    }
+    final byName = a.chore.name.compareTo(b.chore.name);
+    if (byName != 0) return byName;
+    return a.key.compareTo(b.key);
+  };
 }
 
 /// 家事の「次の予定日」。やり忘れがあればその日、もう予定がなければ null。
@@ -255,6 +281,8 @@ AgendaDay buildDayItems({
   required Iterable<Chore> chores,
   required Iterable<Record> records,
   required DateTime date,
+  Map<String, int> genreOrder = const {},
+  bool doneLast = true,
 }) {
   final d = dateOnly(date);
   final index = _RecordIndex(records);
@@ -276,6 +304,6 @@ AgendaDay buildDayItems({
     if (chore == null) continue;
     items.add(Occurrence(chore: chore, date: d, record: r));
   }
-  items.sort(_compareInDay);
+  items.sort(dayOrder(genreOrder: genreOrder, doneLast: doneLast));
   return AgendaDay(d, items);
 }

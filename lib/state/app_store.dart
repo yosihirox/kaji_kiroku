@@ -181,7 +181,15 @@ class AppStore extends ChangeNotifier {
     chores: _data.chores,
     records: _data.records,
     today: today,
+    genreOrder: _genreOrder,
+    doneLast: _data.doneMovesToBottom,
   );
+
+  /// ジャンルの並び順（やることを並べるときに使う）。
+  Map<String, int> get _genreOrder {
+    final list = genres;
+    return {for (var i = 0; i < list.length; i++) list[i].id: i};
+  }
 
   /// 下のタブに出すバッジの件数。
   int get badgeCount => agenda.pendingCount(
@@ -211,8 +219,22 @@ class AppStore extends ChangeNotifier {
   );
 
   /// ホームで日付をえらんだときの、その日の家事。
-  AgendaDay dayItems(DateTime date) =>
-      buildDayItems(chores: _data.chores, records: _data.records, date: date);
+  AgendaDay dayItems(DateTime date) => buildDayItems(
+    chores: _data.chores,
+    records: _data.records,
+    date: date,
+    genreOrder: _genreOrder,
+    doneLast: _data.doneMovesToBottom,
+  );
+
+  /// 期間で絞り込んだときの1日分。1週間の中はホームと同じ並びを使う。
+  AgendaDay dayForFilter(DateTime date) {
+    final d = dateOnly(date);
+    final offset = daysBetween(today, d);
+    final days = agenda.days;
+    if (offset >= 0 && offset < days.length) return days[offset];
+    return dayItems(d);
+  }
 
   /// 今日家事をした人と件数（多い順）。
   List<MemberCount> get todayDoneCounts => doneCountsBetween(
@@ -237,18 +259,32 @@ class AppStore extends ChangeNotifier {
     required String myName,
     List<String> familyNames = const [],
     List<ChoreTemplate> templates = const [],
+    int? myColor,
+    List<int?> familyColors = const [],
   }) {
-    final names = [
-      myName,
-      ...familyNames,
-    ].map((n) => n.trim()).where((n) => n.isNotEmpty).toList();
-    if (names.isEmpty) names.add('わたし');
+    // 名前と色の組。色をえらんでいなければ、空いている色を順に当てる。
+    final entries = <(String, int?)>[
+      (myName.trim(), myColor),
+      for (var i = 0; i < familyNames.length; i++)
+        (
+          familyNames[i].trim(),
+          i < familyColors.length ? familyColors[i] : null,
+        ),
+    ].where((e) => e.$1.isNotEmpty).toList();
+    if (entries.isEmpty) entries.add(('わたし', myColor));
+    final used = {for (final e in entries) ?e.$2};
+    final free = memberColors.where((c) => !used.contains(c)).toList();
+    var next = 0;
     _data.members = [
-      for (var i = 0; i < names.length; i++)
+      for (var i = 0; i < entries.length; i++)
         Member(
           id: _newId(),
-          name: names[i],
-          color: memberColors[i % memberColors.length],
+          name: entries[i].$1,
+          color:
+              entries[i].$2 ??
+              (next < free.length
+                  ? free[next++]
+                  : memberColors[i % memberColors.length]),
         ),
     ];
     _data.currentMemberId = _data.members.first.id;
@@ -418,10 +454,36 @@ class AppStore extends ChangeNotifier {
   Record complete(Occurrence o, {String? doneById}) =>
       _resolve(o, RecordStatus.done, doneById ?? currentMemberId);
 
+  /// まだの分をまとめて完了にする（やった日時はいま）。取り消し用に記録を返す。
+  List<Record> completeAll(Iterable<Occurrence> items, {String? doneById}) {
+    final created = <Record>[];
+    final by = doneById ?? currentMemberId;
+    for (final o in items) {
+      if (!o.isPending) continue;
+      created.add(_resolve(o, RecordStatus.done, by, notify: false));
+    }
+    if (created.isNotEmpty) _changed();
+    return created;
+  }
+
+  /// まとめて記録を取り消す。
+  void undoRecords(Iterable<String> recordIds) {
+    final ids = recordIds.toSet();
+    if (ids.isEmpty) return;
+    _data.records.removeWhere((r) => ids.contains(r.id));
+    _data.thanks.removeWhere((t) => ids.contains(t.recordId));
+    _changed();
+  }
+
   /// 今回はやらない。
   Record skip(Occurrence o) => _resolve(o, RecordStatus.skipped, null);
 
-  Record _resolve(Occurrence o, RecordStatus status, String? doneById) {
+  Record _resolve(
+    Occurrence o,
+    RecordStatus status,
+    String? doneById, {
+    bool notify = true,
+  }) {
     // 「やった日からN日後」は予定日がやった日で決まるので、記録は今日の分として残す。
     final date = o.chore.repeat.type == RepeatType.afterDone
         ? today
@@ -438,7 +500,7 @@ class AppStore extends ChangeNotifier {
       at: now,
     );
     _data.records.add(record);
-    _changed();
+    if (notify) _changed();
     return record;
   }
 
@@ -730,13 +792,23 @@ class AppStore extends ChangeNotifier {
   static const messageDays = 7;
 
   /// 古いメッセージを消すまでの日数。
-  static const _messageKeepDays = 60;
+  static const _messageKeepDays = 400;
 
   /// 直近1週間のメッセージ（新しい順）。
   List<FamilyMessage> get recentMessages {
     final from = addDays(today, -(messageDays - 1));
     return _data.messages.where((m) => !dateOnly(m.at).isBefore(from)).toList()
       ..sort((a, b) => b.at.compareTo(a.at));
+  }
+
+  /// [from]〜[to] の日に送られたメッセージ（新しい順）。「がんばり」の期間表示用。
+  List<FamilyMessage> messagesBetween(DateTime from, DateTime to) {
+    final a = dateOnly(from);
+    final b = dateOnly(to);
+    return _data.messages.where((m) {
+      final d = dateOnly(m.at);
+      return !d.isBefore(a) && !d.isAfter(b);
+    }).toList()..sort((x, y) => y.at.compareTo(x.at));
   }
 
   /// この端末を使っている人から [toId] にメッセージを送る。
@@ -778,6 +850,31 @@ class AppStore extends ChangeNotifier {
   void setShowShoppingSuggestions(bool value) {
     if (_data.showShoppingSuggestions == value) return;
     _data.showShoppingSuggestions = value;
+    _changed();
+  }
+
+  bool get showHomeCheer => _data.showHomeCheer;
+
+  void setShowHomeCheer(bool value) {
+    if (_data.showHomeCheer == value) return;
+    _data.showHomeCheer = value;
+    _changed();
+  }
+
+  bool get homeCheerExpanded => _data.homeCheerExpanded;
+
+  void setHomeCheerExpanded(bool value) {
+    if (_data.homeCheerExpanded == value) return;
+    _data.homeCheerExpanded = value;
+    _changed();
+  }
+
+  /// 完了した家事をその日の最後へ動かすか（設定「完了家事の表示位置」）。
+  bool get doneMovesToBottom => _data.doneMovesToBottom;
+
+  void setDoneMovesToBottom(bool value) {
+    if (_data.doneMovesToBottom == value) return;
+    _data.doneMovesToBottom = value;
     _changed();
   }
 

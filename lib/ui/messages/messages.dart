@@ -69,7 +69,10 @@ class _SendMessageSheetState extends State<_SendMessageSheet> {
       children: [
         Text('メッセージを送る', style: theme.textTheme.titleLarge),
         const SizedBox(height: 4),
-        Text('ホームと「がんばり」に1週間表示されます。', style: theme.textTheme.bodySmall),
+        Text(
+          'ホームに1週間、「がんばり」には送った日の週・月に表示されます。',
+          style: theme.textTheme.bodySmall,
+        ),
         const SectionLabel('だれに？', padding: EdgeInsets.fromLTRB(0, 16, 0, 10)),
         MemberPicker(
           members: store.members,
@@ -215,8 +218,18 @@ class RecentMessages extends StatelessWidget {
   final double spacing;
 
   @override
+  Widget build(BuildContext context) =>
+      MessageList(context.store.recentMessages, spacing: spacing);
+}
+
+/// メッセージを並べる。なければ何も出さない。
+class MessageList extends StatelessWidget {
+  const MessageList(this.messages, {super.key, this.spacing = 8});
+  final List<FamilyMessage> messages;
+  final double spacing;
+
+  @override
   Widget build(BuildContext context) {
-    final messages = context.store.recentMessages;
     if (messages.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -79,7 +79,14 @@ class OccurrenceTile extends StatelessWidget {
         child: Row(
           children: [
             _CheckButton(occurrence: o, color: Color(genre.color)),
-            const SizedBox(width: 2),
+            Opacity(
+              opacity: o.isResolved ? 0.6 : 1,
+              child: Tooltip(
+                message: genre.name,
+                child: GenreIcon(genre, size: 30),
+              ),
+            ),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

@@ -25,6 +25,9 @@ class AppData {
     this.currentMemberId,
     this.onboarded = false,
     this.showShoppingSuggestions = true,
+    this.showHomeCheer = true,
+    this.homeCheerExpanded = true,
+    this.doneMovesToBottom = false,
   }) : members = members ?? [],
        genres = genres ?? defaultGenres(),
        chores = chores ?? [],
@@ -54,6 +57,15 @@ class AppData {
   /// 買い物画面に「よく買うものから追加」を出すか。
   bool showShoppingSuggestions;
 
+  /// ホームに「がんばり」枠を出すか（設定 → 表示）。
+  bool showHomeCheer;
+
+  /// ホームの「がんばり」枠を開いているか（見出しのタップで開け閉め）。
+  bool homeCheerExpanded;
+
+  /// 完了した家事をその日の最後へ動かすか。false なら位置はそのまま。
+  bool doneMovesToBottom;
+
   Map<String, dynamic> toJson() => {
     'version': currentDataVersion,
     'members': [for (final m in members) m.toJson()],
@@ -69,6 +81,9 @@ class AppData {
     'currentMember': currentMemberId,
     'onboarded': onboarded,
     'showShoppingSuggestions': showShoppingSuggestions,
+    'showHomeCheer': showHomeCheer,
+    'homeCheerExpanded': homeCheerExpanded,
+    'doneMovesToBottom': doneMovesToBottom,
   };
 
   String encode() => jsonEncode(toJson());
@@ -110,6 +125,15 @@ AppData decodeAppData(String raw) {
     showShoppingSuggestions: j['showShoppingSuggestions'] is bool
         ? j['showShoppingSuggestions'] as bool
         : true,
+    showHomeCheer: j['showHomeCheer'] is bool
+        ? j['showHomeCheer'] as bool
+        : true,
+    homeCheerExpanded: j['homeCheerExpanded'] is bool
+        ? j['homeCheerExpanded'] as bool
+        : true,
+    doneMovesToBottom: j['doneMovesToBottom'] is bool
+        ? j['doneMovesToBottom'] as bool
+        : false,
   );
   if (version < 2) _migrateFromV1(data);
   _repair(data);

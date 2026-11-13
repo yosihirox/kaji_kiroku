@@ -85,7 +85,7 @@ void main() {
     await tester.tap(find.text('$starters件の家事ではじめる'));
     await tester.pumpAndSettle();
 
-    expect(find.text('今日のやること'), findsOneWidget);
+    expect(find.byTooltip('カレンダーで日付をえらぶ'), findsOneWidget);
     expect(store.onboarded, isTrue);
     expect(store.members.map((m) => m.name), ['なな', 'しろくま']);
     expect(store.currentMember?.name, 'なな');
@@ -184,6 +184,9 @@ void main() {
   testWidgets('完了のお知らせは3秒で消え、タップやタブの切り替えでも消える', (tester) async {
     final store = await _readyStore();
     await _pumpApp(tester, store);
+    // 完了しても行は動かないので、右下のボタンに重ならないところまで送っておく
+    await tester.drag(find.byType(ListView).first, const Offset(0, -300));
+    await tester.pumpAndSettle();
 
     Future<void> complete() async {
       await tester.tap(find.byTooltip('完了にする').first);
@@ -200,7 +203,7 @@ void main() {
 
     // 画面のどこかをタップすると消える
     await complete();
-    await tester.tapAt(const Offset(387, 400));
+    await tester.tapAt(const Offset(5, 400));
     await tester.pumpAndSettle();
     expect(find.text('取り消す'), findsNothing);
 
@@ -224,7 +227,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tapAt(const Offset(5, 5));
     await tester.pumpAndSettle();
-    expect(find.text('今日のやること'), findsOneWidget);
+    expect(find.text('今日に戻る'), findsNothing);
 
     // 「決定」でその日に切り替わる
     await tester.tap(find.byTooltip('カレンダーで日付をえらぶ'));
@@ -233,7 +236,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('決定'));
     await tester.pumpAndSettle();
-    expect(find.text('この日の家事'), findsOneWidget);
+    expect(find.text('今日に戻る'), findsOneWidget);
     expect(
       find.text(formatDateLong(DateTime(today.year, today.month, other))),
       findsOneWidget,
@@ -242,7 +245,7 @@ void main() {
     await tester.ensureVisible(find.text('今日に戻る'));
     await tester.tap(find.text('今日に戻る'));
     await tester.pumpAndSettle();
-    expect(find.text('今日のやること'), findsOneWidget);
+    expect(find.text('今日に戻る'), findsNothing);
   });
 
   testWidgets('メッセージ: 送るとホームとがんばりに出て、送った本人だけが消せる', (tester) async {
@@ -267,7 +270,7 @@ void main() {
     await _waitNotice(tester);
 
     await _openTab(tester, 'がんばり');
-    expect(find.text('この1週間のメッセージ'), findsOneWidget);
+    expect(find.text('今週のメッセージ'), findsOneWidget);
     expect(find.textContaining('いつもありがとう！'), findsOneWidget);
 
     // 受け取った人には × が出ない
@@ -348,7 +351,7 @@ void main() {
     await _pumpApp(tester, store);
     final before = store.chores.length;
 
-    await tester.tap(find.text('家事を追加'));
+    await tester.tap(find.widgetWithText(FloatingActionButton, '家事を追加'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('自分で作る'));
     await tester.pumpAndSettle();
@@ -416,6 +419,9 @@ void main() {
 
     // 家族がやった記録に、ホームからありがとうを送る
     await _openTab(tester, 'ホーム');
+    // 右下のボタンに重ならないところまでスクロールする
+    await tester.drag(find.byType(ListView).first, const Offset(0, -300));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('ありがとうを送る').first);
     await tester.pumpAndSettle();
     expect(
@@ -430,7 +436,8 @@ void main() {
     await _pumpApp(tester, store);
     await _openTab(tester, '設定');
 
-    await tester.ensureVisible(find.text('ダーク'));
+    await tester.scrollUntilVisible(find.text('ダーク'), 200);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('ダーク'));
     await tester.pumpAndSettle();
     expect(store.appearance, Appearance.dark);
@@ -440,6 +447,185 @@ void main() {
     );
   });
 
+  testWidgets('ホーム: 絞り込み検索で合うものだけになり、リセット・解除で戻る', (tester) async {
+    final store = await _readyStore();
+    final first = store.agenda.todayItems.items.first;
+    final genre = store.genreById(first.chore.genreId);
+    await _pumpApp(tester, store);
+
+    await tester.tap(find.widgetWithText(FloatingActionButton, '絞り込み'));
+    await tester.pumpAndSettle();
+    expect(find.text('検索条件をリセット'), findsOneWidget);
+    // 条件がないうちはリセットできない
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.ancestor(
+              of: find.text('検索条件をリセット'),
+              matching: find.byWidgetPredicate((w) => w is OutlinedButton),
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    await tester.enterText(find.byType(TextField).first, first.chore.name);
+    await tester.tap(find.text('未完了'));
+    await tester.pumpAndSettle();
+    expect(find.text('2件の条件'), findsOneWidget);
+
+    // リセットすると条件が初期値に戻り、そのことがわかる
+    await tester.tap(find.text('検索条件をリセット'));
+    await tester.pump();
+    expect(find.text('条件をリセットしました'), findsOneWidget);
+    expect(find.text('2件の条件'), findsNothing);
+    await tester.pumpAndSettle(const Duration(seconds: 3));
+    expect(find.text('条件をリセットしました'), findsNothing);
+
+    await tester.enterText(find.byType(TextField).first, first.chore.name);
+    await tester.scrollUntilVisible(
+      find.widgetWithText(FilterChip, genre.name),
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView).last,
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.tap(find.widgetWithText(FilterChip, genre.name));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('絞り込み検索'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('絞り込み中'), findsOneWidget);
+    expect(find.byTooltip('完了にする'), findsWidgets);
+    // 名前とジャンルが合う家事だけが残る
+    for (final o in store.agenda.todayItems.items) {
+      if (o.chore.name.contains(first.chore.name)) continue;
+      expect(find.text(o.chore.name), findsNothing);
+    }
+
+    await tester.tap(find.text('解除'));
+    await tester.pumpAndSettle();
+    expect(find.text('絞り込み中'), findsNothing);
+  });
+
+  testWidgets('ホーム: 一括完了でその日のまだの分が完了になり、取り消せる', (tester) async {
+    final store = await _readyStore();
+    final pending = store.agenda.todayItems.pendingCount;
+    await _pumpApp(tester, store);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -200));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('一括完了').first);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('$pending件を、まとめて完了にしますか'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, '一括完了'));
+    await tester.pumpAndSettle();
+    expect(store.agenda.todayItems.pendingCount, 0);
+    expect(
+      store.records.every((r) => r.doneById == store.currentMemberId),
+      isTrue,
+    );
+
+    await tester.tap(find.text('取り消す'));
+    await tester.pumpAndSettle();
+    expect(store.agenda.todayItems.pendingCount, pending);
+    await _waitNotice(tester);
+  });
+
+  testWidgets('ホーム: 日付の「＋」で、その日を指定して家事を追加できる', (tester) async {
+    final store = await _readyStore();
+    final tomorrow = addDays(store.today, 1);
+    await _pumpApp(tester, store);
+
+    // 「明日」の見出しの行にある「＋」
+    final header = find.textContaining('明日', findRichText: true);
+    await tester.scrollUntilVisible(header, 200);
+    await tester.pumpAndSettle();
+    final plus = find.descendant(
+      of: find.ancestor(of: header, matching: find.byType(Row)).first,
+      matching: find.byTooltip('この日に家事を追加'),
+    );
+    await tester.ensureVisible(plus);
+    await tester.pumpAndSettle();
+    await tester.tap(plus);
+    await tester.pumpAndSettle();
+    expect(
+      find.text('${formatDateLong(tomorrow)}から始める家事として登録します'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('自分で作る'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '網戸そうじ');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    final chore = store.chores.singleWhere((c) => c.name == '網戸そうじ');
+    expect(chore.start, tomorrow);
+    await _waitNotice(tester);
+  });
+
+  testWidgets('ホーム: がんばり枠は見出しで開け閉めでき、設定で隠せる', (tester) async {
+    final store = await _readyStore();
+    await _pumpApp(tester, store);
+    expect(find.text('メッセージを送る'), findsOneWidget);
+    expect(find.text('今日'), findsWidgets);
+
+    await tester.tap(find.text('がんばり').first);
+    await tester.pumpAndSettle();
+    expect(store.homeCheerExpanded, isFalse);
+    expect(find.text('メッセージを送る'), findsNothing);
+    await tester.tap(find.text('がんばり').first);
+    await tester.pumpAndSettle();
+    expect(find.text('メッセージを送る'), findsOneWidget);
+
+    await _openTab(tester, '設定');
+    await tester.scrollUntilVisible(find.text('「がんばり」の表示'), 200);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('「がんばり」の表示'));
+    await tester.pumpAndSettle();
+    expect(store.showHomeCheer, isFalse);
+    await tester.tap(find.text('最下部'));
+    await tester.pumpAndSettle();
+    expect(store.doneMovesToBottom, isTrue);
+
+    await _openTab(tester, 'ホーム');
+    expect(find.text('メッセージを送る'), findsNothing);
+  });
+
+  testWidgets('完了した家事のくわしい画面に、完了日時が出る', (tester) async {
+    final store = await _readyStore();
+    store.complete(store.agenda.todayItems.items.first);
+    await _pumpApp(tester, store);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -300));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.text(store.agenda.todayItems.items.first.chore.name).first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('完了日時: ${formatDateTime(_now)}'), findsOneWidget);
+  });
+
+  testWidgets('はじめての設定で、家族それぞれの色をえらべる', (tester) async {
+    final store = await _newStore();
+    await _pumpApp(tester, store);
+    await tester.tap(find.text('はじめる'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), 'なな');
+    await tester.enterText(find.byType(TextField).at(1), 'しろくま');
+    await tester.pump();
+    // 自分の色の5番目（ピンク）をえらぶ
+    await tester.tap(find.bySemanticsLabel('色').at(4));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('つぎへ'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('えらばずにはじめる'));
+    await tester.pumpAndSettle();
+    expect(store.members[0].color, memberColors[4]);
+    expect(store.members[1].color, memberColors[1]);
+  });
+
   testWidgets('小さい画面・大きい文字でも、はじめての設定がはみ出さない', (tester) async {
     final store = await _newStore();
     await _pumpApp(tester, store, size: const Size(320, 568), textScale: 1.3);
@@ -447,6 +633,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(0), 'なな');
     await tester.pump();
+    await tester.scrollUntilVisible(
+      find.text('もう1人追加'),
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     await tester.tap(find.text('もう1人追加'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('つぎへ'));
@@ -457,7 +653,8 @@ void main() {
     await tester.pumpAndSettle();
     // 家事がまだないときの案内
     expect(store.chores, isEmpty);
-    expect(find.text('今日のやること'), findsOneWidget);
+    expect(find.byTooltip('カレンダーで日付をえらぶ'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('まずは家事を登録しましょう'), 200);
   });
 
   testWidgets('小さい画面・大きい文字でも、どの画面もはみ出さない', (tester) async {
@@ -526,6 +723,17 @@ void main() {
     await tester.tap(find.text('送信'));
     await tester.pumpAndSettle();
     expect(find.textContaining('いつもありがとう！'), findsOneWidget);
+
+    // 絞り込みのシート（下のボタンは固定で、中身はスクロール）
+    await tester.tap(find.widgetWithText(FloatingActionButton, '絞り込み'));
+    await tester.pumpAndSettle();
+    expect(find.text('絞り込み検索'), findsOneWidget);
+    for (var i = 0; i < 4; i++) {
+      await tester.drag(find.byType(ListView).last, const Offset(0, -400));
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.text('絞り込み検索'));
+    await tester.pumpAndSettle();
 
     await _openTab(tester, '買い物');
     await tester.tap(find.text('牛乳'));

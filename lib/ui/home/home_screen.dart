@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../domain/agenda.dart';
 import '../../domain/dates.dart';
+import '../../domain/home_filter.dart';
 import '../../domain/report.dart';
 import '../chores/add_chore_sheet.dart';
 import '../messages/messages.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/store_scope.dart';
+import 'filter_sheet.dart';
 import 'occurrence_tile.dart';
 import 'quick_record_sheet.dart';
 
 /// ホーム: やり忘れ → 今日 → 明日 … と1週間分の「やること」を並べる。
+///
+/// 右下の「絞り込み」で条件をえらぶと、合うものだけを出す。条件は保存しないので、
+/// アプリを閉じると何も絞り込んでいない状態に戻る。
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -25,10 +31,50 @@ class _HomeScreenState extends State<HomeScreen> {
   /// カレンダーでえらんだ日。null なら今日からの1週間を出す。
   DateTime? _date;
 
+  /// 絞り込みの条件。
+  HomeFilter _filter = HomeFilter.none;
+
   Future<void> _pickDate(DateTime today) async {
     final picked = await showDayPicker(context, initial: _date ?? today);
     if (picked == null || !mounted) return;
-    setState(() => _date = isSameDay(picked, today) ? null : picked);
+    setState(() {
+      _date = isSameDay(picked, today) ? null : picked;
+      // カレンダーで日をえらんだら、絞り込みの期間はやめてその日を出す。
+      if (_filter.hasPeriod) _filter = _filter.copyWith(clearPeriod: true);
+    });
+  }
+
+  Future<void> _openFilter() async {
+    final result = await showFilterSheet(context, _filter);
+    if (result == null || !mounted) return;
+    setState(() {
+      _filter = result;
+      if (result.hasPeriod) _date = null;
+    });
+  }
+
+  /// その日（やり忘れ）のまだの分を、まとめて完了にする。
+  Future<void> _completeAll(String label, List<Occurrence> items) async {
+    final pending = items.where((o) => o.isPending).toList();
+    if (pending.isEmpty) return;
+    final store = context.readStore;
+    final ok = await confirm(
+      context,
+      title: '$labelの${pending.length}件を、まとめて完了にしますか？',
+      message:
+          '${store.currentMember?.name ?? 'いま使っている人'}さんが'
+          '今日（${formatDate(store.today)}）やったことになります。',
+      action: '一括完了',
+    );
+    if (!ok || !mounted) return;
+    HapticFeedback.lightImpact();
+    final records = store.completeAll(pending);
+    showNotice(
+      context,
+      '${records.length}件を完了にしました。おつかれさま！',
+      actionLabel: '取り消す',
+      onAction: () => store.undoRecords(records.map((r) => r.id)),
+    );
   }
 
   @override
@@ -38,43 +84,149 @@ class _HomeScreenState extends State<HomeScreen> {
     final scheme = theme.colorScheme;
     final agenda = store.agenda;
     final me = store.currentMemberId;
+    final filter = _filter;
+    final filtering = filter.isActive;
 
     bool visible(Occurrence o) =>
-        !_onlyMine || isMine(o.chore, me) || o.record?.doneById == me;
+        (!_onlyMine || isMine(o.chore, me) || o.record?.doneById == me) &&
+        filter.matches(
+          o,
+          today: agenda.today,
+          genreName: (id) => store.genreById(id).name,
+        );
+    AgendaDay only(AgendaDay d) =>
+        AgendaDay(d.date, d.items.where(visible).toList());
 
     final overdue = agenda.overdue.where(visible).toList();
-    final days = [
-      for (final d in agenda.days)
-        AgendaDay(d.date, d.items.where(visible).toList()),
-    ];
+    final days = [for (final d in agenda.days) only(d)];
     final today = days.first;
     final hasChores = store.chores.isNotEmpty;
-    final picked = _date;
-    final pickedDay = picked == null
-        ? null
-        : () {
-            final d = store.dayItems(picked);
-            return AgendaDay(d.date, d.items.where(visible).toList());
-          }();
+    final picked = filter.hasPeriod ? null : _date;
+    final pickedDay = picked == null ? null : only(store.dayItems(picked));
+
+    void addOn(DateTime date) => showAddChoreSheet(context, date: date);
+
+    /// 1日分の見出しとカード。絞り込み中は、合うものがない日は出さない。
+    List<Widget> daySection(
+      AgendaDay day, {
+      required String title,
+      String? subtitle,
+      bool emphasized = false,
+    }) {
+      if (filtering && day.items.isEmpty) return const [];
+      final pending = day.pendingCount;
+      return [
+        _DayHeader(
+          title: title,
+          subtitle: subtitle,
+          emphasized: emphasized,
+          compact: day.items.isEmpty,
+          onAdd: () => addOn(day.date),
+          trailing: day.items.isEmpty
+              ? '予定なし'
+              : pending == 0
+              ? 'ぜんぶ完了'
+              : 'のこり$pending件',
+          onCompleteAll: pending == 0
+              ? null
+              : () => _completeAll(
+                  relativeDayLabel(day.date, agenda.today),
+                  day.items,
+                ),
+        ),
+        _ItemsCard(items: day.items, onAdd: () => addOn(day.date)),
+      ];
+    }
+
+    final List<Widget> lists;
+    if (filter.hasPeriod) {
+      final sections = [
+        for (final d in filter.periodDays)
+          ...daySection(
+            only(store.dayForFilter(d)),
+            title: relativeDayLabel(d, agenda.today),
+            subtitle: daysBetween(agenda.today, d).abs() <= 2
+                ? formatDate(d)
+                : null,
+            emphasized: isSameDay(d, agenda.today),
+          ),
+      ];
+      lists = sections.isEmpty ? [const _NoMatchCard()] : sections;
+    } else if (pickedDay != null) {
+      lists = [
+        ...daySection(
+          pickedDay,
+          title: relativeDayLabel(pickedDay.date, agenda.today),
+          subtitle: formatDate(pickedDay.date),
+          emphasized: true,
+        ),
+        if (filtering && pickedDay.items.isEmpty) const _NoMatchCard(),
+      ];
+    } else if (!filtering &&
+        !hasChores &&
+        today.items.isEmpty &&
+        overdue.isEmpty) {
+      lists = [_FirstStepsCard(onAdd: () => showAddChoreSheet(context))];
+    } else {
+      final sections = [
+        if (overdue.isNotEmpty) ...[
+          _DayHeader(
+            title: 'やり忘れ',
+            icon: Icons.notification_important_rounded,
+            color: scheme.error,
+            trailing: '${overdue.length}件',
+            onCompleteAll: () => _completeAll('やり忘れ', overdue),
+          ),
+          _ItemsCard(
+            items: overdue,
+            borderColor: scheme.error.withValues(alpha: 0.45),
+          ),
+        ],
+        ...daySection(
+          today,
+          title: '今日',
+          subtitle: formatDate(today.date),
+          emphasized: true,
+        ),
+        for (final day in days.skip(1))
+          ...daySection(
+            day,
+            title: relativeDayLabel(day.date, agenda.today),
+            subtitle: daysBetween(agenda.today, day.date) <= 2
+                ? formatDate(day.date)
+                : null,
+          ),
+      ];
+      lists = sections.isEmpty ? [const _NoMatchCard()] : sections;
+    }
 
     return Scaffold(
       body: SafeArea(
         bottom: false,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 104),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 176),
           children: [
             _Header(
               date: picked ?? agenda.today,
-              isToday: picked == null,
               onPickDate: () => _pickDate(agenda.today),
             ),
             const SizedBox(height: 14),
-            const _CheerCard(),
-            const SizedBox(height: 12),
-            if (pickedDay == null) ...[
-              _SummaryCard(today: today, overdueCount: overdue.length),
+            if (store.showHomeCheer) ...[
+              const _CheerCard(),
               const SizedBox(height: 12),
-            ] else
+            ],
+            if (filtering)
+              _FilterBanner(
+                filter: filter,
+                onEdit: _openFilter,
+                onClear: () => setState(() => _filter = HomeFilter.none),
+              ),
+            if (pickedDay == null && !filter.hasPeriod) ...[
+              if (!filtering) ...[
+                _SummaryCard(today: today, overdueCount: overdue.length),
+                const SizedBox(height: 12),
+              ],
+            ] else if (pickedDay != null)
               _PastDayBanner(
                 date: pickedDay.date,
                 today: agenda.today,
@@ -118,61 +270,129 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
-            if (pickedDay != null) ...[
-              _DayHeader(
-                title: relativeDayLabel(pickedDay.date, agenda.today),
-                subtitle: formatDate(pickedDay.date),
-                emphasized: true,
-                trailing: pickedDay.items.isEmpty
-                    ? null
-                    : '完了${pickedDay.doneCount}件 / ${pickedDay.items.length}件',
-              ),
-              if (pickedDay.items.isEmpty)
-                const _EmptyDayCard(message: 'この日の家事はありません。')
-              else
-                _ItemsCard(items: pickedDay.items),
-            ] else if (!hasChores && today.items.isEmpty && overdue.isEmpty)
-              _FirstStepsCard(onAdd: () => showAddChoreSheet(context))
-            else ...[
-              if (overdue.isNotEmpty) ...[
-                _DayHeader(
-                  title: 'やり忘れ',
-                  icon: Icons.notification_important_rounded,
-                  color: scheme.error,
-                  trailing: '${overdue.length}件',
-                ),
-                _ItemsCard(
-                  items: overdue,
-                  borderColor: scheme.error.withValues(alpha: 0.45),
-                ),
-              ],
-              _DayHeader(
-                title: '今日',
-                subtitle: formatDate(today.date),
-                emphasized: true,
-                trailing: today.items.isEmpty
-                    ? null
-                    : today.pendingCount == 0
-                    ? 'ぜんぶ完了'
-                    : 'のこり${today.pendingCount}件',
-              ),
-              if (today.items.isEmpty)
-                const _EmptyDayCard()
-              else
-                _ItemsCard(items: today.items),
-              for (final day in days.skip(1)) ...[
-                _DayHeader(
-                  title: relativeDayLabel(day.date, agenda.today),
-                  subtitle: daysBetween(agenda.today, day.date) <= 2
-                      ? formatDate(day.date)
-                      : null,
-                  trailing: day.items.isEmpty ? '予定なし' : null,
-                  compact: day.items.isEmpty,
-                ),
-                if (day.items.isNotEmpty) _ItemsCard(items: day.items),
-              ],
-            ],
+            ...lists,
           ],
+        ),
+      ),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'home-filter',
+            onPressed: _openFilter,
+            backgroundColor: filtering
+                ? scheme.tertiaryContainer
+                : scheme.secondaryContainer,
+            foregroundColor: filtering
+                ? scheme.onTertiaryContainer
+                : scheme.onSecondaryContainer,
+            icon: Badge(
+              isLabelVisible: filtering,
+              label: Text('${filter.conditionCount}'),
+              child: const Icon(Icons.search_rounded),
+            ),
+            label: const Text('絞り込み'),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'home-add',
+            onPressed: () => showAddChoreSheet(context, date: _date),
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('家事を追加'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 絞り込み中であることと、その条件。
+class _FilterBanner extends StatelessWidget {
+  const _FilterBanner({
+    required this.filter,
+    required this.onEdit,
+    required this.onClear,
+  });
+  final HomeFilter filter;
+  final VoidCallback onEdit;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.store;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final parts = describeFilter(
+      filter,
+      genreName: (id) => store.genreById(id).name,
+      choreName: (id) => store.choreById(id)?.name,
+      memberName: (id) => store.memberById(id)?.name,
+    );
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: scheme.tertiaryContainer,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onEdit,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
+          child: Row(
+            children: [
+              Icon(Icons.filter_alt_rounded, color: scheme.onTertiaryContainer),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '絞り込み中',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: scheme.onTertiaryContainer,
+                      ),
+                    ),
+                    Text(
+                      parts.join('  ・  '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onTertiaryContainer,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: scheme.onTertiaryContainer,
+                ),
+                onPressed: onClear,
+                child: const Text('解除'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 絞り込んだ結果、何もなかったとき。
+class _NoMatchCard extends StatelessWidget {
+  const _NoMatchCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.only(top: 16),
+      child: Card(
+        child: EmptyState(
+          icon: Icons.search_off_rounded,
+          title: '条件に合う家事はありません',
+          message: '右下の「絞り込み」から条件を変えてみてください。',
         ),
       ),
     );
@@ -181,13 +401,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
 /// 日付と、この端末を使っている人の切り替え。日付をタップするとカレンダーが開く。
 class _Header extends StatelessWidget {
-  const _Header({
-    required this.date,
-    required this.isToday,
-    required this.onPickDate,
-  });
+  const _Header({required this.date, required this.onPickDate});
   final DateTime date;
-  final bool isToday;
   final VoidCallback onPickDate;
 
   @override
@@ -197,7 +412,7 @@ class _Header extends StatelessWidget {
     final scheme = theme.colorScheme;
     final me = store.currentMember;
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
           child: Column(
@@ -229,10 +444,6 @@ class _Header extends StatelessWidget {
                     ),
                   ),
                 ),
-              ),
-              Text(
-                isToday ? '今日のやること' : 'この日の家事',
-                style: theme.textTheme.headlineMedium,
               ),
             ],
           ),
@@ -429,6 +640,8 @@ class _DayHeader extends StatelessWidget {
     this.color,
     this.emphasized = false,
     this.compact = false,
+    this.onAdd,
+    this.onCompleteAll,
   });
 
   final String title;
@@ -441,6 +654,12 @@ class _DayHeader extends StatelessWidget {
   /// 予定のない日は、行間を詰めて控えめに出す。
   final bool compact;
 
+  /// 日付の左の「＋」（その日を指定して家事を追加）。
+  final VoidCallback? onAdd;
+
+  /// 「のこり○件」の右の「一括完了」。
+  final VoidCallback? onCompleteAll;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -448,10 +667,25 @@ class _DayHeader extends StatelessWidget {
     final titleColor =
         color ?? (compact ? scheme.onSurfaceVariant : scheme.onSurface);
     return Padding(
-      padding: EdgeInsets.fromLTRB(6, compact ? 14 : 22, 6, compact ? 0 : 8),
+      padding: EdgeInsets.fromLTRB(
+        onAdd == null ? 6 : 0,
+        compact ? 12 : 18,
+        2,
+        compact ? 4 : 6,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          if (onAdd != null) ...[
+            IconButton.filledTonal(
+              tooltip: 'この日に家事を追加',
+              visualDensity: VisualDensity.compact,
+              iconSize: 20,
+              onPressed: onAdd,
+              icon: const Icon(Icons.add_rounded),
+            ),
+            const SizedBox(width: 4),
+          ],
           if (icon != null) ...[
             Icon(icon, size: 20, color: color),
             const SizedBox(width: 6),
@@ -477,25 +711,48 @@ class _DayHeader extends StatelessWidget {
               ),
             ),
           ),
-          if (trailing != null) const SizedBox(width: 8),
-          if (trailing != null)
+          if (trailing != null) ...[
+            const SizedBox(width: 8),
             Text(
               trailing!,
               style: theme.textTheme.labelMedium?.copyWith(
                 color: color ?? scheme.onSurfaceVariant,
               ),
             ),
+          ],
+          if (onCompleteAll != null) ...[
+            const SizedBox(width: 6),
+            Tooltip(
+              message: 'まだの家事をまとめて完了にする',
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  minimumSize: const Size(0, 36),
+                  foregroundColor: color ?? scheme.primary,
+                  side: BorderSide(
+                    color: (color ?? scheme.primary).withValues(alpha: 0.5),
+                  ),
+                  textStyle: theme.textTheme.labelMedium,
+                ),
+                onPressed: onCompleteAll,
+                icon: const Icon(Icons.done_all_rounded, size: 16),
+                label: const Text('一括完了'),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-/// 1日分のやることをまとめたカード。
+/// 1日分のやることをまとめたカード。[onAdd] があれば、いちばん下に「家事を追加」。
 class _ItemsCard extends StatelessWidget {
-  const _ItemsCard({required this.items, this.borderColor});
+  const _ItemsCard({required this.items, this.borderColor, this.onAdd});
   final List<Occurrence> items;
   final Color? borderColor;
+  final VoidCallback? onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -507,42 +764,27 @@ class _ItemsCard extends StatelessWidget {
         side: BorderSide(color: borderColor ?? scheme.outlineVariant),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (var i = 0; i < items.length; i++) ...[
-            if (i > 0) const Divider(indent: 56),
+            if (i > 0) const Divider(indent: 96),
             OccurrenceTile(items[i], key: ValueKey(items[i].key)),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyDayCard extends StatelessWidget {
-  const _EmptyDayCard({this.message = '今日の予定はありません。'});
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Row(
-          children: [
-            Icon(Icons.spa_rounded, color: scheme.primary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
+          if (onAdd != null) ...[
+            if (items.isNotEmpty) const Divider(),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
+                child: TextButton.icon(
+                  onPressed: onAdd,
+                  icon: const Icon(Icons.add_rounded, size: 20),
+                  label: const Text('家事を追加'),
                 ),
               ),
             ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -712,73 +954,121 @@ class _CheerCard extends StatelessWidget {
       ),
     );
 
+    final expanded = store.homeCheerExpanded;
+
     return Card(
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(24),
         side: BorderSide(color: scheme.outlineVariant),
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 14, 14, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.volunteer_activism_rounded,
-                  size: 20,
-                  color: scheme.primary,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 見出しの行をタップすると、開いたり折りたたんだりできる。
+          Semantics(
+            button: true,
+            expanded: expanded,
+            child: InkWell(
+              onTap: () => store.setHomeCheerExpanded(!expanded),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 12, 12),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.volunteer_activism_rounded,
+                      size: 20,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text('がんばり', style: theme.textTheme.titleMedium),
+                    ),
+                    if (!expanded && today.isNotEmpty) ...[
+                      for (final c in today.take(4))
+                        Padding(
+                          padding: const EdgeInsets.only(left: 2),
+                          child: MemberAvatar(c.member, size: 22),
+                        ),
+                      const SizedBox(width: 6),
+                    ],
+                    AnimatedRotation(
+                      turns: expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        Icons.expand_more_rounded,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 6),
-                Text('がんばり', style: theme.textTheme.titleMedium),
-                const SizedBox(width: 8),
-                Text('今日', style: theme.textTheme.bodySmall),
-              ],
-            ),
-            const SizedBox(height: 6),
-            if (today.isEmpty)
-              Text(
-                '今日はまだ記録がありません。',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-              )
-            else
-              for (final c in today) countRow(c),
-            if (top.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                'この1週間で1番家事をがんばった人',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 2),
-              for (final c in top) countRow(c, strong: true),
-              const SizedBox(height: 4),
-              Text(
-                'がんばりました！おつかれさま！ありがとう！',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: colors.celebrate,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-            const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.tonalIcon(
-                onPressed: () => showSendMessageSheet(context),
-                icon: const Icon(Icons.mail_rounded, size: 18),
-                label: const Text('メッセージを送る'),
               ),
             ),
-            if (store.recentMessages.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              const RecentMessages(),
-            ],
-          ],
-        ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: !expanded
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 0, 14, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          '今日',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        if (today.isEmpty)
+                          Text(
+                            '今日はまだ記録がありません。',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          )
+                        else
+                          for (final c in today) countRow(c),
+                        if (top.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            'この1週間で1番家事をがんばった人',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          for (final c in top) countRow(c, strong: true),
+                          const SizedBox(height: 4),
+                          Text(
+                            'がんばりました！おつかれさま！ありがとう！',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colors.celebrate,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 6),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: FilledButton.tonalIcon(
+                            onPressed: () => showSendMessageSheet(context),
+                            icon: const Icon(Icons.mail_rounded, size: 18),
+                            label: const Text('メッセージを送る'),
+                          ),
+                        ),
+                        if (store.recentMessages.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          const RecentMessages(),
+                        ],
+                      ],
+                    ),
+                  ),
+          ),
+        ],
       ),
     );
   }

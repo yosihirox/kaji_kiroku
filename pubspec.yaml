@@ -1,7 +1,7 @@
 name: kaji_kiroku
 description: "家族で「やること」と「やったこと」を共有する家事アプリ（試作版）"
 publish_to: 'none'
-version: 0.3.0+3
+version: 0.4.0+4
 
 environment:
   sdk: ^3.9.0

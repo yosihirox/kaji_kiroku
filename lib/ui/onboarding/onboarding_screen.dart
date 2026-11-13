@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/catalog.dart';
+import '../../domain/models.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/store_scope.dart';
@@ -17,6 +18,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   int _step = 0;
   final _myName = TextEditingController();
   final _family = <TextEditingController>[TextEditingController()];
+
+  /// 名前ごとにえらんだ色。先頭が自分、そのあとが家族の順。
+  final _colors = <int>[memberColors[0], memberColors[1]];
+
+  /// まだだれも使っていない色（なければ順番に）。
+  int _nextColor() => memberColors.firstWhere(
+    (c) => !_colors.contains(c),
+    orElse: () => memberColors[_colors.length % memberColors.length],
+  );
   final _selected = <ChoreTemplate>{...choreTemplates.where((t) => t.starter)};
 
   @override
@@ -32,6 +42,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     context.readStore.completeOnboarding(
       myName: _myName.text,
       familyNames: [for (final c in _family) c.text],
+      myColor: _colors[0],
+      familyColors: _colors.sublist(1),
       // 一覧と同じ順番で登録する。
       templates: withChores
           ? choreTemplates.where(_selected.contains).toList()
@@ -73,32 +85,30 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       ),
       children: [
         const SectionLabel('あなたの名前', padding: EdgeInsets.fromLTRB(4, 8, 4, 8)),
-        TextField(
+        _NameWithColor(
           controller: _myName,
+          color: _colors[0],
           autofocus: true,
-          textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(hintText: '例: なな'),
+          hint: '例: なな',
           onChanged: (_) => setState(() {}),
+          onColor: (c) => setState(() => _colors[0] = c),
         ),
         const SectionLabel('いっしょに使う家族'),
         for (var i = 0; i < _family.length; i++)
           Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: TextField(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: _NameWithColor(
               controller: _family[i],
-              textInputAction: TextInputAction.next,
-              decoration: InputDecoration(
-                hintText: i == 0 ? '例: パパ' : '名前',
-                suffixIcon: _family.length > 1
-                    ? IconButton(
-                        tooltip: 'この人を消す',
-                        onPressed: () => setState(() {
-                          _family.removeAt(i).dispose();
-                        }),
-                        icon: const Icon(Icons.close_rounded, size: 20),
-                      )
-                    : null,
-              ),
+              color: _colors[i + 1],
+              hint: i == 0 ? '例: パパ' : '名前',
+              onChanged: (_) => setState(() {}),
+              onColor: (c) => setState(() => _colors[i + 1] = c),
+              onRemove: _family.length > 1
+                  ? () => setState(() {
+                      _family.removeAt(i).dispose();
+                      _colors.removeAt(i + 1);
+                    })
+                  : null,
             ),
           ),
         Align(
@@ -106,14 +116,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: TextButton.icon(
             onPressed: _family.length >= 6
                 ? null
-                : () => setState(() => _family.add(TextEditingController())),
+                : () => setState(() {
+                    _colors.add(_nextColor());
+                    _family.add(TextEditingController());
+                  }),
             icon: const Icon(Icons.add_rounded, size: 20),
             label: const Text('もう1人追加'),
           ),
         ),
         const SizedBox(height: 4),
         Text(
-          'あとから設定で追加・変更できます。ひとりで使う場合は空のままで大丈夫です。',
+          '色は、担当ややった人の目印になります。名前も色も、あとから設定で変えられます。'
+          'ひとりで使う場合は家族の欄は空のままで大丈夫です。',
           style: theme.textTheme.bodySmall,
         ),
       ],
@@ -360,6 +374,73 @@ class _StepFrame extends StatelessWidget {
             border: Border(top: BorderSide(color: scheme.outlineVariant)),
           ),
           child: footer,
+        ),
+      ],
+    );
+  }
+}
+
+/// 名前の入力と、その人の色えらび。左の丸は、いまの色と頭文字の見本。
+class _NameWithColor extends StatelessWidget {
+  const _NameWithColor({
+    required this.controller,
+    required this.color,
+    required this.hint,
+    required this.onChanged,
+    required this.onColor,
+    this.onRemove,
+    this.autofocus = false,
+  });
+
+  final TextEditingController controller;
+  final int color;
+  final String hint;
+  final ValueChanged<String> onChanged;
+  final ValueChanged<int> onColor;
+  final VoidCallback? onRemove;
+  final bool autofocus;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = controller.text.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            MemberAvatar(
+              Member(id: '', name: name.isEmpty ? '？' : name, color: color),
+              size: 40,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: controller,
+                autofocus: autofocus,
+                textInputAction: TextInputAction.next,
+                decoration: InputDecoration(
+                  hintText: hint,
+                  suffixIcon: onRemove == null
+                      ? null
+                      : IconButton(
+                          tooltip: 'この人を消す',
+                          onPressed: onRemove,
+                          icon: const Icon(Icons.close_rounded, size: 20),
+                        ),
+                ),
+                onChanged: onChanged,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.only(left: 50),
+          child: MemberColorPicker(
+            selected: color,
+            onSelected: onColor,
+            size: 30,
+          ),
         ),
       ],
     );
