@@ -75,6 +75,14 @@ class _OccurrenceSheet extends StatelessWidget {
               : '${formatDateLong(o.date)}の予定',
           color: o.overdue ? scheme.error : null,
         ),
+        if (record != null)
+          _InfoLine(
+            icon: record.isDone ? Icons.task_alt_rounded : Icons.redo_rounded,
+            text: record.isDone
+                ? '完了日時: ${formatDateTime(record.at)}'
+                : 'スキップした日時: ${formatDateTime(record.at)}',
+            color: record.isDone ? scheme.primary : null,
+          ),
         if (!chore.archived)
           _InfoLine(
             icon: Icons.person_rounded,

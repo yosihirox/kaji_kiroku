@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/catalog.dart';
+import '../../domain/dates.dart';
 import '../widgets/common.dart';
 import '../widgets/store_scope.dart';
 import 'chore_editor.dart';
@@ -9,16 +10,22 @@ import 'chore_editor.dart';
 ///
 /// [genreId] を渡すと、そのジャンルのよくある家事だけを出し、
 /// 「自分で作る」もそのジャンルをえらんだ状態で開く。
-Future<void> showAddChoreSheet(BuildContext context, {String? genreId}) {
+/// [date] を渡すと、その日を初回の日付にした状態で開く。
+Future<void> showAddChoreSheet(
+  BuildContext context, {
+  String? genreId,
+  DateTime? date,
+}) {
   return showAppSheet<void>(
     context,
-    builder: (_) => _AddChoreSheet(genreId: genreId),
+    builder: (_) => _AddChoreSheet(genreId: genreId, date: date),
   );
 }
 
 class _AddChoreSheet extends StatelessWidget {
-  const _AddChoreSheet({this.genreId});
+  const _AddChoreSheet({this.genreId, this.date});
   final String? genreId;
+  final DateTime? date;
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +41,7 @@ class _AddChoreSheet extends StatelessWidget {
         choreEditorRoute(
           template: template,
           genreId: template == null ? genreId : null,
+          date: date,
         ),
       );
     }
@@ -62,6 +70,23 @@ class _AddChoreSheet extends StatelessWidget {
             ),
           ],
         ),
+        if (date != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.event_rounded, size: 18, color: scheme.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '${formatDateLong(date!)}から始める家事として登録します',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 14),
         SizedBox(
           width: double.infinity,

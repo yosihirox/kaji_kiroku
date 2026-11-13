@@ -104,7 +104,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('買い物'),
+        title: const ScreenTitle('買い物', icon: Icons.shopping_basket_rounded),
         actions: [
           PopupMenuButton<String>(
             tooltip: 'リストの操作',

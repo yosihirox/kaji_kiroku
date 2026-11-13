@@ -14,11 +14,16 @@ Route<void> choreEditorRoute({
   Chore? chore,
   ChoreTemplate? template,
   String? genreId,
+  DateTime? date,
 }) {
   return MaterialPageRoute<void>(
     fullscreenDialog: true,
-    builder: (_) =>
-        ChoreEditor(chore: chore, template: template, genreId: genreId),
+    builder: (_) => ChoreEditor(
+      chore: chore,
+      template: template,
+      genreId: genreId,
+      date: date,
+    ),
   );
 }
 
@@ -35,10 +40,19 @@ const _cycleLabels = {
 };
 
 class ChoreEditor extends StatefulWidget {
-  const ChoreEditor({super.key, this.chore, this.template, this.genreId});
+  const ChoreEditor({
+    super.key,
+    this.chore,
+    this.template,
+    this.genreId,
+    this.date,
+  });
   final Chore? chore;
   final ChoreTemplate? template;
   final String? genreId;
+
+  /// 新しく登録するときの初回の日付（ホームの日付ごとの「＋」から開いたとき）。
+  final DateTime? date;
 
   @override
   State<ChoreEditor> createState() => _ChoreEditorState();
@@ -83,7 +97,8 @@ class _ChoreEditorState extends State<ChoreEditor> {
         widget.genreId ??
         (genres.isNotEmpty ? genres.first.id : otherGenreId);
     _assigneeId = c?.assigneeId;
-    _start = c?.start ?? t?.startFor(today) ?? today;
+    final date = widget.date == null ? null : dateOnly(widget.date!);
+    _start = c?.start ?? date ?? t?.startFor(today) ?? today;
     _dueMinutes = c?.dueMinutes ?? t?.dueMinutes;
 
     final r = c?.repeat ?? t?.repeat ?? const Repeat.none();

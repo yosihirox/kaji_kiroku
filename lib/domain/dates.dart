@@ -65,3 +65,7 @@ String relativeDayLabel(DateTime day, DateTime today) {
       return formatDate(day);
   }
 }
+
+/// 「2026年11月12日（水）22:31」
+String formatDateTime(DateTime at) =>
+    '${at.year}年${formatDateLong(at)} ${at.hour}:${_pad2(at.minute)}';

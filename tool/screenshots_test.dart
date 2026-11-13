@@ -290,6 +290,25 @@ void main() {
     await tester.tapAt(const Offset(195, 40));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.widgetWithText(FloatingActionButton, '絞り込み'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('未完了'));
+    await tester.pumpAndSettle();
+    await shot(tester, '16_home_filter');
+    await tester.drag(find.byType(ListView).last, const Offset(0, -500));
+    await shot(tester, '17_home_filter_more');
+    await tester.tap(find.text('絞り込み検索'));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).first, const Offset(0, 3000));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).first, const Offset(0, -260));
+    await tester.pumpAndSettle();
+    await shot(tester, '18_home_filtered');
+    await tester.ensureVisible(find.text('解除'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('解除'));
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('買い物').last);
     await shot(tester, '20_shopping');
     await tester.tap(find.text('牛乳'));
@@ -327,6 +346,10 @@ void main() {
 
     await tester.tap(find.text('設定').last);
     await shot(tester, '50_settings');
+    await tester.drag(find.byType(ListView).last, const Offset(0, -560));
+    await shot(tester, '53_settings_display');
+    await tester.drag(find.byType(ListView).last, const Offset(0, 560));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('通知とリマインド'));
     await shot(tester, '51_notifications');
     await tester.drag(find.byType(ListView).last, const Offset(0, -560));

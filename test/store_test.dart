@@ -5,6 +5,7 @@ import 'package:kaji_kiroku/data/storage.dart';
 import 'package:kaji_kiroku/domain/agenda.dart';
 import 'package:kaji_kiroku/domain/catalog.dart';
 import 'package:kaji_kiroku/domain/dates.dart';
+import 'package:kaji_kiroku/domain/home_filter.dart';
 import 'package:kaji_kiroku/domain/models.dart';
 import 'package:kaji_kiroku/domain/notifications.dart';
 import 'package:kaji_kiroku/domain/recurrence.dart';
@@ -686,14 +687,22 @@ void main() {
         store.agenda.todayItems.items.firstWhere((o) => o.chore.id == daily.id),
         doneById: papa,
       );
+      now = DateTime(2026, 11, 7, 11);
       store.recordUnplanned(extra, doneById: me);
       now = DateTime(2026, 11, 11, 9);
 
+      // 「位置維持」（はじめの設定）: 完了しても並びは変わらない
       final sat = store.dayItems(DateTime(2026, 11, 7));
-      expect(names(sat.items), ['窓ふき', '食器洗い', '靴みがき']);
+      expect(names(sat.items), ['窓ふき', '靴みがき', '食器洗い']);
       expect(sat.items[0].isPending, isTrue);
-      expect(sat.items[1].record?.doneById, papa);
-      expect(sat.items[2].isUnplanned, isTrue);
+      expect(sat.items[1].isUnplanned, isTrue);
+      expect(sat.items[2].record?.doneById, papa);
+
+      // 「最下部」: 終わったものはその日の最後へ（やった順）
+      store.setDoneMovesToBottom(true);
+      final moved = store.dayItems(DateTime(2026, 11, 7));
+      expect(names(moved.items), ['窓ふき', '食器洗い', '靴みがき']);
+      store.setDoneMovesToBottom(false);
 
       final sun = store.dayItems(DateTime(2026, 11, 8));
       expect(names(sun.items), ['食器洗い']);
@@ -735,6 +744,187 @@ void main() {
       await again.load();
       expect(again.showShoppingSuggestions, isFalse);
     });
+  });
+
+  group('ホームの並び順', () {
+    test('時刻のある家事を時刻順に先に、時刻のない家事はジャンル順に並べる', () {
+      final d = DateTime(2026, 11, 11);
+      add('夕飯', const Repeat.daily(), d, genre: 'cooking', due: 19 * 60);
+      add('ゴミ出し', const Repeat.daily(), d, genre: 'cleaning', due: 8 * 60);
+      add('床ふき', const Repeat.daily(), d, genre: 'cleaning');
+      add('洗濯', const Repeat.daily(), d, genre: 'laundry');
+      add('献立', const Repeat.daily(), d, genre: 'cooking');
+      // ジャンルの並び: 料理 → 買い物 → 洗濯 → 掃除 …
+      expect(names(store.agenda.todayItems.items), [
+        'ゴミ出し',
+        '夕飯',
+        '献立',
+        '洗濯',
+        '床ふき',
+      ]);
+    });
+
+    test('「位置維持」なら完了してもそのまま、「最下部」なら最後へ', () {
+      final d = DateTime(2026, 11, 11);
+      add('A家事', const Repeat.daily(), d, due: 8 * 60);
+      add('B家事', const Repeat.daily(), d, due: 9 * 60);
+      add('C家事', const Repeat.daily(), d, due: 10 * 60);
+      expect(store.doneMovesToBottom, isFalse);
+      store.complete(store.agenda.todayItems.items.first);
+      expect(names(store.agenda.todayItems.items), ['A家事', 'B家事', 'C家事']);
+      expect(store.agenda.todayItems.items.first.isDone, isTrue);
+
+      store.setDoneMovesToBottom(true);
+      expect(names(store.agenda.todayItems.items), ['B家事', 'C家事', 'A家事']);
+    });
+  });
+
+  group('一括完了', () {
+    test('まだの分だけを今の日時で完了にし、まとめて取り消せる', () {
+      final d = DateTime(2026, 11, 11);
+      add('A家事', const Repeat.daily(), d);
+      add('B家事', const Repeat.daily(), d);
+      add('C家事', const Repeat.daily(), d);
+      final tomorrow = store.agenda.days[1];
+      store.complete(tomorrow.items.first, doneById: papa);
+
+      final created = store.completeAll(store.agenda.days[1].items);
+      expect(created, hasLength(2));
+      expect(created.every((r) => r.doneById == me), isTrue);
+      expect(created.every((r) => r.at == now), isTrue);
+      expect(created.every((r) => r.date == DateTime(2026, 11, 12)), isTrue);
+      expect(store.agenda.days[1].pendingCount, 0);
+
+      store.undoRecords(created.map((r) => r.id));
+      expect(store.agenda.days[1].pendingCount, 2);
+      expect(store.records, hasLength(1));
+    });
+  });
+
+  group('絞り込み', () {
+    test('状態・ジャンル・家事名・担当・やった人・時刻・キーワードで絞り込める', () {
+      final d = DateTime(2026, 11, 11);
+      final dinner = add(
+        '夕飯づくり',
+        const Repeat.daily(),
+        d,
+        genre: 'cooking',
+        due: 19 * 60,
+        assignee: papa,
+      );
+      add('床ふき', const Repeat.daily(), d, genre: 'cleaning');
+      add('洗濯', const Repeat.daily(), d, genre: 'laundry', assignee: me);
+      store.complete(
+        store.agenda.todayItems.items.firstWhere((o) => o.chore.name == '洗濯'),
+        doneById: papa,
+      );
+      final today = store.agenda.todayItems.items;
+      List<String> pick(HomeFilter f) => names(
+        today.where(
+          (o) => f.matches(
+            o,
+            today: store.today,
+            genreName: (id) => store.genreById(id).name,
+          ),
+        ),
+      )..sort();
+
+      expect(pick(HomeFilter.none), hasLength(3));
+      expect(pick(const HomeFilter(status: StatusFilter.done)), ['洗濯']);
+      expect(pick(const HomeFilter(status: StatusFilter.pending)), [
+        '夕飯づくり',
+        '床ふき',
+      ]);
+      expect(pick(const HomeFilter(genreIds: {'cleaning'})), ['床ふき']);
+      expect(pick(HomeFilter(choreIds: {dinner.id})), ['夕飯づくり']);
+      expect(pick(const HomeFilter(assigneeIds: {anyoneId})), ['床ふき']);
+      expect(pick(HomeFilter(doneByIds: {papa})), ['洗濯']);
+      expect(pick(const HomeFilter(time: TimeFilter.timed)), ['夕飯づくり']);
+      expect(pick(const HomeFilter(keyword: 'ゆう')), isEmpty);
+      expect(pick(const HomeFilter(keyword: '夕飯')), ['夕飯づくり']);
+      // ジャンル名でも探せる
+      expect(pick(const HomeFilter(keyword: '料理')), ['夕飯づくり']);
+      expect(
+        const HomeFilter(keyword: '夕飯', time: TimeFilter.timed).conditionCount,
+        2,
+      );
+    });
+
+    test('期間は古い順の日付になり、長すぎる期間は切り詰める', () {
+      final f = HomeFilter(
+        from: DateTime(2026, 11, 12),
+        to: DateTime(2026, 11, 10),
+      );
+      expect(f.periodDays.map(dateKey), [
+        '2026-11-10',
+        '2026-11-11',
+        '2026-11-12',
+      ]);
+      final long = HomeFilter(
+        from: DateTime(2026, 1, 1),
+        to: DateTime(2026, 12, 31),
+      );
+      expect(long.periodDays, hasLength(maxFilterDays));
+    });
+
+    test('期間の1日分は、1週間の中ならホームと同じ中身になる', () {
+      add('床ふき', const Repeat.daily(), DateTime(2026, 11, 1));
+      expect(
+        names(store.dayForFilter(DateTime(2026, 11, 12)).items),
+        names(store.agenda.days[1].items),
+      );
+      expect(names(store.dayForFilter(DateTime(2026, 11, 5)).items), ['床ふき']);
+    });
+  });
+
+  group('表示の設定', () {
+    test('がんばり枠・開け閉め・完了の位置を覚えている', () async {
+      expect(store.showHomeCheer, isTrue);
+      expect(store.homeCheerExpanded, isTrue);
+      expect(store.doneMovesToBottom, isFalse);
+      store.setShowHomeCheer(false);
+      store.setHomeCheerExpanded(false);
+      store.setDoneMovesToBottom(true);
+      await store.flush();
+      final again = AppStore(storage, clock: () => now);
+      await again.load();
+      expect(again.showHomeCheer, isFalse);
+      expect(again.homeCheerExpanded, isFalse);
+      expect(again.doneMovesToBottom, isTrue);
+    });
+  });
+
+  test('はじめての設定でえらんだ色が、そのまま使われる', () async {
+    final fresh = AppStore(MemoryStorage(), clock: () => now);
+    await fresh.load();
+    fresh.completeOnboarding(
+      myName: 'なな',
+      familyNames: ['しろくま', '', 'ばあば'],
+      myColor: memberColors[4],
+      familyColors: [memberColors[4], memberColors[2], null],
+    );
+    expect(fresh.members.map((m) => m.name), ['なな', 'しろくま', 'ばあば']);
+    expect(fresh.members[0].color, memberColors[4]);
+    expect(fresh.members[1].color, memberColors[4]);
+    // 色をえらんでいない人には、まだ使っていない色
+    expect(fresh.members[2].color, memberColors[0]);
+  });
+
+  test('「がんばり」の期間に送られたメッセージだけを出す', () {
+    now = DateTime(2026, 11, 3, 12);
+    store.sendMessage(papa, '先週のメッセージ');
+    now = DateTime(2026, 11, 11, 9);
+    store.sendMessage(papa, '今週のメッセージ');
+    final thisWeek = ReportPeriod.week(store.today);
+    final lastWeek = ReportPeriod.week(store.today, -1);
+    expect(
+      store.messagesBetween(thisWeek.from, thisWeek.to).map((m) => m.text),
+      ['今週のメッセージ'],
+    );
+    expect(
+      store.messagesBetween(lastWeek.from, lastWeek.to).map((m) => m.text),
+      ['先週のメッセージ'],
+    );
   });
 
   test('日付が変わると、やることが新しい日に切り替わる', () {

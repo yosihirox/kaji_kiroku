@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../domain/catalog.dart';
 import '../../domain/dates.dart';
 import '../../domain/models.dart';
 import '../chores/genres_screen.dart';
-import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/store_scope.dart';
 import 'notification_settings_screen.dart';
 
 /// アプリの版。pubspec.yaml の version と合わせる。
-const appVersionLabel = '試作版 0.3';
+const appVersionLabel = '試作版 0.4';
 
 /// 設定: 家族、通知、表示、データ。
 class SettingsScreen extends StatelessWidget {
@@ -31,7 +29,9 @@ class SettingsScreen extends StatelessWidget {
     ].join('  ・  ');
 
     return Scaffold(
-      appBar: AppBar(title: const Text('設定')),
+      appBar: AppBar(
+        title: const ScreenTitle('設定', icon: Icons.settings_rounded),
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
         children: [
@@ -140,7 +140,69 @@ class SettingsScreen extends StatelessWidget {
               onTap: () => Navigator.of(context).push(genresRoute()),
             ),
           ),
-          const SectionLabel('画面の明るさ'),
+          const SectionLabel('表示'),
+          const _SubLabel('ホーム画面'),
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.volunteer_activism_rounded),
+                  title: const Text('「がんばり」の表示'),
+                  subtitle: Text(
+                    store.showHomeCheer ? 'ホームにがんばり枠を出す' : 'ホームにがんばり枠を出さない',
+                  ),
+                  value: store.showHomeCheer,
+                  onChanged: store.setShowHomeCheer,
+                ),
+                const Divider(indent: 56),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.low_priority_rounded,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Text(
+                              '完了家事の表示位置',
+                              style: theme.textTheme.bodyLarge,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      SegmentedButton<bool>(
+                        showSelectedIcon: false,
+                        segments: const [
+                          ButtonSegment(value: false, label: Text('位置維持')),
+                          ButtonSegment(value: true, label: Text('最下部')),
+                        ],
+                        selected: {store.doneMovesToBottom},
+                        onSelectionChanged: (s) =>
+                            store.setDoneMovesToBottom(s.first),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        store.doneMovesToBottom
+                            ? '完了にした家事は、その日のいちばん下に移ります。'
+                            : '完了にしても、家事はその場所のままチェックだけ入ります。',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const _SubLabel('画面の明るさ'),
           SizedBox(
             width: double.infinity,
             child: SegmentedButton<Appearance>(
@@ -278,6 +340,26 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
+/// 大項目の中の小見出し。
+class _SubLabel extends StatelessWidget {
+  const _SubLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 4, 8),
+      child: Text(
+        text,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.onSurface,
+        ),
+      ),
+    );
+  }
+}
+
 /// メンバーの名前・色の変更、使う人の切り替え、家族から外す。
 class _MemberEditor extends StatefulWidget {
   const _MemberEditor({required this.memberId});
@@ -353,36 +435,9 @@ class _MemberEditorState extends State<_MemberEditor> {
           ],
         ),
         const SectionLabel('色', padding: EdgeInsets.fromLTRB(0, 18, 0, 8)),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            for (final c in memberColors)
-              Semantics(
-                button: true,
-                selected: member.color == c,
-                label: '色',
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: () => store.updateMember(member.id, color: c),
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: memberColor(c, context),
-                      shape: BoxShape.circle,
-                    ),
-                    child: member.color == c
-                        ? const Icon(
-                            Icons.check_rounded,
-                            size: 20,
-                            color: Colors.white,
-                          )
-                        : null,
-                  ),
-                ),
-              ),
-          ],
+        MemberColorPicker(
+          selected: member.color,
+          onSelected: (c) => store.updateMember(member.id, color: c),
         ),
         const SizedBox(height: 20),
         if (isCurrent)

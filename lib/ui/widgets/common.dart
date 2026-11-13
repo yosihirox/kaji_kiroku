@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../../domain/catalog.dart';
 import '../../domain/models.dart';
 import '../theme.dart';
 
@@ -483,6 +484,74 @@ class MemberPicker extends StatelessWidget {
             selected: !anyoneSelected && selectedId == m.id,
             onSelected: (_) => onSelected(m),
           ),
+      ],
+    );
+  }
+}
+
+/// メンバーの色えらび（丸を横に並べる）。
+class MemberColorPicker extends StatelessWidget {
+  const MemberColorPicker({
+    super.key,
+    required this.selected,
+    required this.onSelected,
+    this.size = 36,
+  });
+
+  final int? selected;
+  final ValueChanged<int> onSelected;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: size * 0.28,
+      runSpacing: size * 0.28,
+      children: [
+        for (final c in memberColors)
+          Semantics(
+            button: true,
+            selected: selected == c,
+            label: '色',
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: () => onSelected(c),
+              child: Container(
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  color: memberColor(c, context),
+                  shape: BoxShape.circle,
+                ),
+                child: selected == c
+                    ? Icon(
+                        Icons.check_rounded,
+                        size: size * 0.56,
+                        color: Colors.white,
+                      )
+                    : null,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// 画面上の見出し。下のタブと同じアイコンを名前の左に並べる。
+class ScreenTitle extends StatelessWidget {
+  const ScreenTitle(this.text, {super.key, required this.icon});
+  final String text;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 26, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(width: 8),
+        Flexible(child: Text(text)),
       ],
     );
   }
